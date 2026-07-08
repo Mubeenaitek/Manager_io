@@ -1,7 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR ACTUAL URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbxwGesZyadod_LCsxC4LC_2UCHJMoyMZxVSylp-ijbxCFYuvjIqjysLGqjkc_mka2Er/exec';
 
 // ======================================================
 // STATE
