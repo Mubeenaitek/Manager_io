@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Manager.io Field Data</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>📋 Manager.io</h1>
+    <p>Field Data Entry</p>
+  </header>
+
+  <nav class="tabs" id="tabNav">
+    <button class="tab-btn active" data-tab="daily">📝 Daily</button>
+    <button class="tab-btn" data-tab="serial">🔢 Serial</button>
+    <button class="tab-btn" data-tab="petrol">⛽ Petrol</button>
+    <button class="tab-btn" data-tab="petty">💰 Petty</button>
+    <button class="tab-btn" data-tab="export">📤 Export</button>
+  </nav>
+
+  <main>
+    <!-- Daily Report -->
+    <section id="tab-daily" class="tab-content active">
+      <form id="dailyForm">
+        <!-- ... same as previous HTML but without embedded script ... -->
+        <!-- We'll use separate script.js for logic -->
+      </form>
+      <div id="dailyMessage" class="message"></div>
+    </section>
+
+    <!-- Serial Entry -->
+    <section id="tab-serial" class="tab-content">
+      <form id="serialForm">
+        <!-- ... -->
+      </form>
+      <div id="serialMessage" class="message"></div>
+      <hr>
+      <h3>🔍 Lookup Serial</h3>
+      <div style="display:flex; gap:8px; align-items:end;">
+        <input type="text" id="lookupSerial" placeholder="Enter serial number" style="flex:1;">
+        <button class="btn btn-success" onclick="lookupSerial()">Search</button>
+      </div>
+      <div id="lookupResult" class="message"></div>
+    </section>
+
+    <!-- Petrol -->
+    <section id="tab-petrol" class="tab-content">
+      <form id="petrolForm">
+        <!-- ... -->
+      </form>
+      <div id="petrolMessage" class="message"></div>
+    </section>
+
+    <!-- Petty Cash -->
+    <section id="tab-petty" class="tab-content">
+      <form id="pettyForm">
+        <!-- ... -->
+      </form>
+      <div id="pettyMessage" class="message"></div>
+    </section>
+
+    <!-- Export -->
+    <section id="tab-export" class="tab-content">
+      <h3>📤 Generate Billable Time CSV</h3>
+      <p>Export active daily reports to Manager.io Billable Time format.</p>
+      <button class="btn btn-success" onclick="generateBillableTime()">Generate CSV</button>
+      <div id="exportMessage" class="message"></div>
+      <div id="exportResult" style="display:none; margin-top:16px; background:#e6f4ea; padding:16px; border-radius:8px;">
+        <p><strong>✅ CSV Generated</strong></p>
+        <p>Records: <span id="exportCount">0</span></p>
+        <a id="exportFileLink" href="#" target="_blank">📥 Download CSV</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
