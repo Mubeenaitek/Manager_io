@@ -1,7 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR ACTUAL URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/AKfycbxEQUPQI_YzpWJ0h3IsutEUpoObfuLYKFMziz6gXksrQc3AMwdgxHiRnhXryO87VJqA/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbzAb4wRhGy_PUyc_EFNuZIU2DOSQPcZoxXl5b2QgR24XFKqAGrlqhi-91bD1vp0h_47/exec';
 
 // ======================================================
 // STATE
