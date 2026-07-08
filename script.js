@@ -1,7 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR ACTUAL URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/AKfycbxwGesZyadod_LCsxC4LC_2UCHJMoyMZxVSylp-ijbxCFYuvjIqjysLGqjkc_mka2Er/exec';
+const API_BASE = 'https://script.google.com/macros/s/AKfycbxEQUPQI_YzpWJ0h3IsutEUpoObfuLYKFMziz6gXksrQc3AMwdgxHiRnhXryO87VJqA/exec';
 
 // ======================================================
 // STATE
@@ -175,14 +175,274 @@ function calcPettyTotal() {
 }
 
 // ======================================================
-// FORM SUBMISSIONS (keep as before – these haven't changed)
+// SUBMIT FUNCTIONS
 // ======================================================
-// ... (copy the same submit functions from earlier)
+async function submitDailyReport(e) {
+  e.preventDefault();
+  clearMessage('dailyMessage');
+  const crew = getSelectedCrew();
+  if (crew.length === 0) {
+    showMessage('dailyMessage', 'Please select at least one crew member', 'error');
+    return;
+  }
+  const data = {
+    action: 'submitDailyReport',
+    customer: document.getElementById('dailyCustomer').value,
+    project: document.getElementById('dailyProject').value,
+    workType: document.getElementById('dailyWorkType').value,
+    description: document.getElementById('dailyDescription').value,
+    materials: getMaterials(),
+    crew: crew,
+    date: document.getElementById('dailyDate').value,
+    startTime: document.getElementById('dailyStartTime').value,
+    endTime: document.getElementById('dailyEndTime').value,
+    photos: document.getElementById('dailyPhotos').value,
+    issues: document.getElementById('dailyIssues').value,
+    email: document.getElementById('dailyEmail').value
+  };
+  if (!data.customer || !data.project || !data.date || !data.startTime || !data.endTime) {
+    showMessage('dailyMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitDailyReport', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Daily Report';
+    if (result.success) {
+      showMessage('dailyMessage', '✅ ' + result.message, 'success');
+      document.getElementById('dailyWorkType').value = '';
+      document.getElementById('dailyDescription').value = '';
+      document.getElementById('dailyPhotos').value = '';
+      document.getElementById('dailyIssues').value = '';
+      document.getElementById('dailyEmail').value = '';
+      document.getElementById('materialContainer').innerHTML = `
+        <div class="material-row">
+          <input type="text" class="material-item" placeholder="Item name or code">
+          <input type="number" class="material-qty" placeholder="Qty" min="0" step="1">
+          <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
+        </div>
+      `;
+      document.querySelectorAll('.crew-checkbox').forEach(cb => cb.checked = false);
+    } else {
+      showMessage('dailyMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Daily Report';
+    showMessage('dailyMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
+
+async function submitSerialEntry(e) {
+  e.preventDefault();
+  clearMessage('serialMessage');
+  const data = {
+    action: 'submitSerialEntry',
+    customer: document.getElementById('serialCustomer').value,
+    project: document.getElementById('serialProject').value,
+    date: document.getElementById('serialDate').value,
+    item: document.getElementById('serialItem').value,
+    serialNumber: document.getElementById('serialNumber').value,
+    quantity: document.getElementById('serialQty').value || 1,
+    crewOnSite: document.getElementById('serialCrew').value,
+    photo: document.getElementById('serialPhoto').value,
+    notes: document.getElementById('serialNotes').value
+  };
+  if (!data.customer || !data.project || !data.date || !data.item || !data.serialNumber) {
+    showMessage('serialMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitSerialEntry', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Serial Entry';
+    if (result.success) {
+      showMessage('serialMessage', '✅ ' + result.message, 'success');
+      document.getElementById('serialItem').value = '';
+      document.getElementById('serialNumber').value = '';
+      document.getElementById('serialQty').value = 1;
+      document.getElementById('serialCrew').value = '';
+      document.getElementById('serialPhoto').value = '';
+      document.getElementById('serialNotes').value = '';
+    } else {
+      showMessage('serialMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Serial Entry';
+    showMessage('serialMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
+
+async function submitPetrol(e) {
+  e.preventDefault();
+  clearMessage('petrolMessage');
+  const data = {
+    action: 'submitPetrol',
+    crewMember: document.getElementById('petrolCrew').value,
+    date: document.getElementById('petrolDate').value,
+    odometer: document.getElementById('petrolOdometer').value,
+    liters: document.getElementById('petrolLiters').value,
+    costPerLitre: document.getElementById('petrolCostPerLitre').value,
+    totalAmount: document.getElementById('petrolAmount').value,
+    paymentMethod: document.getElementById('petrolPaymentMethod').value,
+    receiptPhoto: document.getElementById('petrolReceipt').value,
+    email: document.getElementById('petrolEmail').value
+  };
+  if (!data.crewMember || !data.date || !data.totalAmount) {
+    showMessage('petrolMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitPetrol', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Petrol Entry';
+    if (result.success) {
+      showMessage('petrolMessage', '✅ ' + result.message, 'success');
+      document.getElementById('petrolOdometer').value = '';
+      document.getElementById('petrolLiters').value = '';
+      document.getElementById('petrolCostPerLitre').value = '';
+      document.getElementById('petrolAmount').value = '';
+      document.getElementById('petrolReceipt').value = '';
+      document.getElementById('petrolEmail').value = '';
+    } else {
+      showMessage('petrolMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Petrol Entry';
+    showMessage('petrolMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
+
+async function submitPettyCash(e) {
+  e.preventDefault();
+  clearMessage('pettyMessage');
+  const data = {
+    action: 'submitPettyCash',
+    date: document.getElementById('pettyDate').value,
+    category: document.getElementById('pettyCategory').value,
+    description: document.getElementById('pettyDescription').value,
+    project: document.getElementById('pettyProject').value,
+    amountExcludingVAT: document.getElementById('pettyAmountExVAT').value,
+    vatAmount: document.getElementById('pettyVAT').value,
+    totalAmount: document.getElementById('pettyTotalAmount').value,
+    paidBy: document.getElementById('pettyPaidBy').value,
+    paymentMethod: document.getElementById('pettyPaymentMethod').value,
+    supplier: document.getElementById('pettySupplier').value,
+    receiptPhoto: document.getElementById('pettyReceipt').value,
+    notes: document.getElementById('pettyNotes').value,
+    email: document.getElementById('pettyEmail').value
+  };
+  if (!data.date || !data.category || !data.description || !data.totalAmount) {
+    showMessage('pettyMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitPettyCash', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Petty Cash';
+    if (result.success) {
+      showMessage('pettyMessage', '✅ ' + result.message, 'success');
+      document.getElementById('pettyCategory').value = '';
+      document.getElementById('pettyDescription').value = '';
+      document.getElementById('pettyAmountExVAT').value = '';
+      document.getElementById('pettyVAT').value = '';
+      document.getElementById('pettyTotalAmount').value = '';
+      document.getElementById('pettySupplier').value = '';
+      document.getElementById('pettyReceipt').value = '';
+      document.getElementById('pettyNotes').value = '';
+      document.getElementById('pettyEmail').value = '';
+    } else {
+      showMessage('pettyMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Petty Cash';
+    showMessage('pettyMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
 
 // ======================================================
-// EXPORT & LOOKUP (keep as before)
+// EXPORT
 // ======================================================
-// ... (copy the same generateBillableTime and lookupSerial)
+async function generateBillableTime() {
+  const btn = document.getElementById('exportBtn');
+  const msg = document.getElementById('exportMessage');
+  const resultDiv = document.getElementById('exportResult');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  msg.style.display = 'none';
+  resultDiv.style.display = 'none';
+  try {
+    const result = await callAPI('generateBillableTime');
+    btn.disabled = false;
+    btn.textContent = 'Generate Billable Time CSV';
+    if (result.success) {
+      document.getElementById('exportCount').textContent = result.recordCount || 0;
+      document.getElementById('exportFileLink').href = result.fileUrl;
+      resultDiv.style.display = 'block';
+      showMessage('exportMessage', '✅ ' + result.message, 'success');
+    } else {
+      showMessage('exportMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Generate Billable Time CSV';
+    showMessage('exportMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
+
+// ======================================================
+// SERIAL LOOKUP
+// ======================================================
+async function lookupSerial() {
+  const serial = document.getElementById('lookupSerial').value.trim();
+  const resultDiv = document.getElementById('lookupResult');
+  if (!serial) {
+    showMessage('lookupResult', 'Please enter a serial number', 'info');
+    return;
+  }
+  try {
+    const result = await callAPI('getSerialTracking', { serial });
+    if (result.success) {
+      if (result.records && result.records.length > 0) {
+        let html = '<div style="font-weight:500; margin-bottom:8px;">Found ' + result.records.length + ' record(s):</div>';
+        html += '<ul style="list-style:none; padding:0;">';
+        result.records.forEach(r => {
+          html += `<li style="padding:8px; background:#f5f7fa; margin-bottom:4px; border-radius:4px; font-size:13px;">
+            <strong>${r['Column 2'] || 'N/A'}</strong> - 
+            Customer: ${r['Column 3'] || 'N/A'} | 
+            Project: ${r['Column 4'] || 'N/A'} | 
+            Date: ${r['Column 5'] || 'N/A'}
+          </li>`;
+        });
+        html += '</ul>';
+        resultDiv.innerHTML = html;
+        resultDiv.className = 'message info';
+        resultDiv.style.display = 'block';
+      } else {
+        showMessage('lookupResult', 'No records found for serial: ' + serial, 'info');
+      }
+    } else {
+      showMessage('lookupResult', 'Error: ' + result.error, 'error');
+    }
+  } catch (error) {
+    showMessage('lookupResult', 'Error: ' + error.message, 'error');
+  }
+}
 
 // ======================================================
 // INIT
@@ -190,7 +450,6 @@ function calcPettyTotal() {
 document.addEventListener('DOMContentLoaded', function() {
   loadDropdowns();
 
-  // Set default date and time only if elements exist
   const today = new Date().toISOString().split('T')[0];
   document.querySelectorAll('input[type="date"]').forEach(el => {
     if (!el.value) el.value = today;
@@ -202,7 +461,6 @@ document.addEventListener('DOMContentLoaded', function() {
     startTimeEl.value = now;
   }
 
-  // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -212,7 +470,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Form events
   const dailyForm = document.getElementById('dailyForm');
   if (dailyForm) dailyForm.addEventListener('submit', submitDailyReport);
 
@@ -225,7 +482,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const pettyForm = document.getElementById('pettyForm');
   if (pettyForm) pettyForm.addEventListener('submit', submitPettyCash);
 
-  // Auto-calc
   const petrolLiters = document.getElementById('petrolLiters');
   if (petrolLiters) petrolLiters.addEventListener('input', calcPetrolTotal);
   const petrolCost = document.getElementById('petrolCostPerLitre');
