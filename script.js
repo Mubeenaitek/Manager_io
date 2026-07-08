@@ -439,15 +439,20 @@ async function lookupSerial() {
 // INIT
 // ======================================================
 document.addEventListener('DOMContentLoaded', function() {
+  // Load dropdowns
   loadDropdowns();
 
-  // Set default date and time
+  // Set default date and time ONLY if elements exist
   const today = new Date().toISOString().split('T')[0];
   document.querySelectorAll('input[type="date"]').forEach(el => {
     if (!el.value) el.value = today;
   });
-  const now = new Date().toTimeString().slice(0, 5);
-  document.getElementById('dailyStartTime').value = now;
+
+  const startTimeEl = document.getElementById('dailyStartTime');
+  if (startTimeEl) {
+    const now = new Date().toTimeString().slice(0, 5);
+    startTimeEl.value = now;
+  }
 
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -458,6 +463,30 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('tab-' + this.dataset.tab).classList.add('active');
     });
   });
+
+  // Form events
+  const dailyForm = document.getElementById('dailyForm');
+  if (dailyForm) dailyForm.addEventListener('submit', submitDailyReport);
+
+  const serialForm = document.getElementById('serialForm');
+  if (serialForm) serialForm.addEventListener('submit', submitSerialEntry);
+
+  const petrolForm = document.getElementById('petrolForm');
+  if (petrolForm) petrolForm.addEventListener('submit', submitPetrol);
+
+  const pettyForm = document.getElementById('pettyForm');
+  if (pettyForm) pettyForm.addEventListener('submit', submitPettyCash);
+
+  // Auto-calc (only if elements exist)
+  const petrolLiters = document.getElementById('petrolLiters');
+  if (petrolLiters) petrolLiters.addEventListener('input', calcPetrolTotal);
+  const petrolCost = document.getElementById('petrolCostPerLitre');
+  if (petrolCost) petrolCost.addEventListener('input', calcPetrolTotal);
+  const pettyEx = document.getElementById('pettyAmountExVAT');
+  if (pettyEx) pettyEx.addEventListener('input', calcPettyTotal);
+  const pettyVat = document.getElementById('pettyVAT');
+  if (pettyVat) pettyVat.addEventListener('input', calcPettyTotal);
+});
 
   // Form events
   document.getElementById('dailyForm').addEventListener('submit', submitDailyReport);
