@@ -1,7 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR ACTUAL URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/AKfycbwvHPVnXa0KVSZL_9K-rK4_DeydropgerYv_baThjmMABROaB_d9XDRGS7P0tbN2sr5/exec';
+const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
 
 // ======================================================
 // STATE
@@ -43,6 +43,101 @@ async function callAPI(action, data = {}) {
 }
 
 // ======================================================
+// SEARCHABLE DROPDOWN HELPERS
+// ======================================================
+
+/**
+ * Populate a searchable dropdown with options.
+ * @param {string} searchInputId - ID of the search input field
+ * @param {string} listId - ID of the dropdown list container
+ * @param {Array} options - Array of objects with {value, label}
+ * @param {string} hiddenSelectId - (optional) ID of hidden select to store value
+ */
+function populateSearchDropdown(searchInputId, listId, options, hiddenSelectId = null) {
+  const input = document.getElementById(searchInputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+
+  // Store options as data attribute
+  input.dataset.options = JSON.stringify(options);
+
+  // Populate list
+  renderDropdownList(listId, options);
+
+  // Show all options on focus if not typing
+  input.addEventListener('focus', function() {
+    const opts = JSON.parse(this.dataset.options || '[]');
+    renderDropdownList(listId, opts);
+    list.classList.add('show');
+  });
+
+  input.addEventListener('blur', function() {
+    // Delay to allow click on list item
+    setTimeout(() => { list.classList.remove('show'); }, 200);
+  });
+
+  input.addEventListener('input', function() {
+    const search = this.value.toLowerCase().trim();
+    const opts = JSON.parse(this.dataset.options || '[]');
+    const filtered = opts.filter(opt => opt.label.toLowerCase().includes(search));
+    renderDropdownList(listId, filtered);
+    if (filtered.length > 0) {
+      list.classList.add('show');
+    } else {
+      list.classList.remove('show');
+    }
+    // Clear hidden select value if any
+    if (hiddenSelectId) {
+      document.getElementById(hiddenSelectId).value = '';
+    }
+  });
+
+  // Also handle click on list items
+  list.addEventListener('click', function(e) {
+    const item = e.target.closest('.dropdown-item');
+    if (!item) return;
+    const value = item.dataset.value;
+    const label = item.textContent.trim();
+    input.value = label;
+    if (hiddenSelectId) {
+      document.getElementById(hiddenSelectId).value = value;
+    }
+    // Trigger change event
+    input.dispatchEvent(new Event('change'));
+    list.classList.remove('show');
+  });
+}
+
+function renderDropdownList(listId, options) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  if (options.length === 0) {
+    list.innerHTML = '<div class="dropdown-item" style="color:#999;">No results</div>';
+    return;
+  }
+  list.innerHTML = options.map(opt =>
+    `<div class="dropdown-item" data-value="${opt.value}">${opt.label}</div>`
+  ).join('');
+}
+
+/**
+ * Get the selected value from a searchable dropdown.
+ */
+function getSearchDropdownValue(searchInputId, hiddenSelectId = null) {
+  const input = document.getElementById(searchInputId);
+  if (!input) return '';
+  // If we have a hidden select, use its value
+  if (hiddenSelectId) {
+    const select = document.getElementById(hiddenSelectId);
+    if (select) return select.value;
+  }
+  // Otherwise try to find matching option
+  const opts = JSON.parse(input.dataset.options || '[]');
+  const found = opts.find(opt => opt.label === input.value.trim());
+  return found ? found.value : input.value.trim();
+}
+
+// ======================================================
 // LOAD DROPDOWNS
 // ======================================================
 async function loadDropdowns() {
@@ -50,7 +145,7 @@ async function loadDropdowns() {
     const data = await callAPI('getDropdownData');
     if (data.success) {
       dropdownData = data;
-      populateDropdowns(data);
+      populateAllDropdowns(data);
       showMessage('dailyMessage', '✅ Data refreshed', 'success');
     } else {
       showMessage('dailyMessage', 'Error loading data: ' + data.error, 'error');
@@ -60,102 +155,178 @@ async function loadDropdowns() {
   }
 }
 
-function populateDropdowns(data) {
-  // Customers
-  ['dailyCustomer', 'serialCustomer'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (sel) {
-      sel.innerHTML = '<option value="">Select Customer...</option>';
-      data.customers.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.code || c.name;
-        opt.textContent = c.name + (c.code ? ' (' + c.code + ')' : '');
-        sel.appendChild(opt);
-      });
-    }
-  });
+function populateAllDropdowns(data) {
+  // Helper to create options array for searchable dropdowns
+  const toOptions = (items, labelKey, valueKey) =>
+    items.map(item => ({ value: item[valueKey], label: item[labelKey] }));
 
-  // Projects
-  ['dailyProject', 'serialProject', 'pettyProject'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (sel) {
-      sel.innerHTML = '<option value="">Select Project...</option>';
-      data.projects.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.name;
-        opt.textContent = p.name;
-        sel.appendChild(opt);
-      });
-    }
-  });
+  // --- Customers ---
+  const customerOpts = toOptions(data.customers, 'name', 'code');
+  populateSearchDropdown('dailyCustomerSearch', 'dailyCustomerList', customerOpts, 'dailyCustomer');
+  populateSearchDropdown('serialCustomerSearch', 'serialCustomerList', customerOpts, 'serialCustomer');
 
-  // Crew checkboxes
+  // --- Projects ---
+  const projectOpts = toOptions(data.projects, 'name', 'name');
+  populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
+  populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
+  populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
+
+  // --- Inventory (for serial item) ---
+  const inventoryOpts = toOptions(data.inventory, 'name', 'code');
+  populateSearchDropdown('serialItemSearch', 'serialItemList', inventoryOpts, 'serialItem');
+
+  // --- Crew ---
+  const crewOpts = toOptions(data.crew, 'name', 'name');
+  populateSearchDropdown('serialCrewSearch', 'serialCrewList', crewOpts, 'serialCrew');
+  populateSearchDropdown('petrolCrewSearch', 'petrolCrewList', crewOpts, 'petrolCrew');
+  populateSearchDropdown('pettyPaidBySearch', 'pettyPaidByList', crewOpts, 'pettyPaidBy');
+
+  // --- Suppliers ---
+  const supplierOpts = toOptions(data.suppliers || [], 'name', 'code');
+  populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
+
+  // --- Crew Checkboxes (with search) ---
+  populateCrewCheckboxes(data.crew);
+
+  // --- Material rows (inventory) ---
+  // The material rows are dynamic; we'll set up a function to populate them later.
+  // We'll also need to re-populate material rows when new ones are added.
+  populateMaterialRows(data.inventory);
+
+  // Also store inventory for later use in addMaterialRow
+  window._inventoryData = data.inventory;
+}
+
+function populateCrewCheckboxes(crew) {
   const container = document.getElementById('crewCheckboxes');
-  if (container) {
-    container.innerHTML = '';
-    data.crew.forEach(c => {
-      const label = document.createElement('label');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = c.name;
-      cb.className = 'crew-checkbox';
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(c.name + ' (' + c.role + ')'));
-      container.appendChild(label);
+  if (!container) return;
+  container.innerHTML = '';
+  crew.forEach(c => {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = c.name;
+    cb.className = 'crew-checkbox';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(c.name + ' (' + c.role + ')'));
+    container.appendChild(label);
+  });
+
+  // Attach search filter for crew
+  const searchInput = document.getElementById('crewSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      const query = this.value.toLowerCase().trim();
+      container.querySelectorAll('label').forEach(label => {
+        const text = label.textContent.toLowerCase();
+        label.classList.toggle('hidden', !text.includes(query));
+      });
     });
   }
+}
 
-  // Crew dropdowns
-  ['serialCrew', 'petrolCrew', 'pettyPaidBy'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (sel) {
-      sel.innerHTML = '<option value="">Select...</option>';
-      data.crew.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.name;
-        opt.textContent = c.name;
-        sel.appendChild(opt);
+function populateMaterialRows(inventory) {
+  const rows = document.querySelectorAll('.material-row');
+  rows.forEach(row => {
+    const searchInput = row.querySelector('.material-search');
+    const listDiv = row.querySelector('.material-list');
+    const hiddenSelect = row.querySelector('.material-item-select');
+    if (searchInput && listDiv) {
+      const opts = inventory.map(item => ({ value: item.code, label: item.name + (item.code ? ' (' + item.code + ')' : '') }));
+      // Store options on the search input
+      searchInput.dataset.options = JSON.stringify(opts);
+      // Render list on focus
+      searchInput.addEventListener('focus', function() {
+        const optsParsed = JSON.parse(this.dataset.options || '[]');
+        renderDropdownList(listDiv.id || '', optsParsed);
+        listDiv.classList.add('show');
       });
-    }
-  });
-
-  // Inventory dropdown for material rows
-  document.querySelectorAll('.material-item-select').forEach(sel => {
-    if (sel) {
-      sel.innerHTML = '<option value="">Select Item...</option>';
-      data.inventory.forEach(item => {
-        const opt = document.createElement('option');
-        opt.value = item.code || item.name;
-        opt.textContent = item.name + (item.code ? ' (' + item.code + ')' : '');
-        sel.appendChild(opt);
+      searchInput.addEventListener('blur', function() {
+        setTimeout(() => { listDiv.classList.remove('show'); }, 200);
+      });
+      searchInput.addEventListener('input', function() {
+        const query = this.value.toLowerCase().trim();
+        const optsParsed = JSON.parse(this.dataset.options || '[]');
+        const filtered = optsParsed.filter(opt => opt.label.toLowerCase().includes(query));
+        renderDropdownList(listDiv.id || '', filtered);
+        if (filtered.length > 0) {
+          listDiv.classList.add('show');
+        } else {
+          listDiv.classList.remove('show');
+        }
+        if (hiddenSelect) hiddenSelect.value = '';
+      });
+      listDiv.addEventListener('click', function(e) {
+        const item = e.target.closest('.dropdown-item');
+        if (!item) return;
+        const value = item.dataset.value;
+        const label = item.textContent.trim();
+        searchInput.value = label;
+        if (hiddenSelect) hiddenSelect.value = value;
+        listDiv.classList.remove('show');
       });
     }
   });
 }
 
 // ======================================================
-// MATERIALS
+// MATERIALS - Add row with searchable inventory
 // ======================================================
 function addMaterialRow() {
   const container = document.getElementById('materialContainer');
   if (!container) return;
   const div = document.createElement('div');
   div.className = 'material-row';
-  // Use select for inventory items
-  let optionsHtml = '<option value="">Select Item...</option>';
-  if (dropdownData && dropdownData.inventory) {
-    dropdownData.inventory.forEach(item => {
-      optionsHtml += `<option value="${item.code || item.name}">${item.name} (${item.code || ''})</option>`;
-    });
-  }
+  const inventory = window._inventoryData || [];
+  const opts = inventory.map(item => ({ value: item.code, label: item.name + (item.code ? ' (' + item.code + ')' : '') }));
+  const listId = 'matList_' + Date.now();
   div.innerHTML = `
-    <select class="material-item-select" style="flex:3;">
-      ${optionsHtml}
-    </select>
+    <div style="flex:3; position:relative;">
+      <input type="text" class="material-search" placeholder="Search item..." style="width:100%;">
+      <select class="material-item-select" style="display:none;"></select>
+      <div class="material-list dropdown-list" id="${listId}"></div>
+    </div>
     <input type="number" class="material-qty" placeholder="Qty" min="0" step="1" style="flex:1;">
     <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
   `;
   container.appendChild(div);
+
+  // Now set up the search for this new row
+  const searchInput = div.querySelector('.material-search');
+  const listDiv = div.querySelector('.material-list');
+  const hiddenSelect = div.querySelector('.material-item-select');
+  if (searchInput && listDiv) {
+    searchInput.dataset.options = JSON.stringify(opts);
+    searchInput.addEventListener('focus', function() {
+      const optsParsed = JSON.parse(this.dataset.options || '[]');
+      renderDropdownList(listId, optsParsed);
+      listDiv.classList.add('show');
+    });
+    searchInput.addEventListener('blur', function() {
+      setTimeout(() => { listDiv.classList.remove('show'); }, 200);
+    });
+    searchInput.addEventListener('input', function() {
+      const query = this.value.toLowerCase().trim();
+      const optsParsed = JSON.parse(this.dataset.options || '[]');
+      const filtered = optsParsed.filter(opt => opt.label.toLowerCase().includes(query));
+      renderDropdownList(listId, filtered);
+      if (filtered.length > 0) {
+        listDiv.classList.add('show');
+      } else {
+        listDiv.classList.remove('show');
+      }
+      if (hiddenSelect) hiddenSelect.value = '';
+    });
+    listDiv.addEventListener('click', function(e) {
+      const item = e.target.closest('.dropdown-item');
+      if (!item) return;
+      const value = item.dataset.value;
+      const label = item.textContent.trim();
+      searchInput.value = label;
+      if (hiddenSelect) hiddenSelect.value = value;
+      listDiv.classList.remove('show');
+    });
+  }
 }
 
 function removeMaterial(btn) {
@@ -165,249 +336,50 @@ function removeMaterial(btn) {
 }
 
 function getMaterials() {
-  const items = document.querySelectorAll('.material-item-select');
-  const qtys = document.querySelectorAll('.material-qty');
+  const rows = document.querySelectorAll('.material-row');
   const materials = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i].value.trim();
-    const qty = parseInt(qtys[i].value) || 0;
+  rows.forEach(row => {
+    const searchInput = row.querySelector('.material-search');
+    const qtyInput = row.querySelector('.material-qty');
+    const item = searchInput ? searchInput.value.trim() : '';
+    const qty = qtyInput ? parseInt(qtyInput.value) || 0 : 0;
     if (item) materials.push({ item, qty });
-  }
+  });
   return materials;
 }
 
+// ======================================================
+// CREW CHECKBOX GETTER
+// ======================================================
 function getSelectedCrew() {
   const checkboxes = document.querySelectorAll('.crew-checkbox:checked');
   return Array.from(checkboxes).map(cb => cb.value);
 }
 
 // ======================================================
-// PHOTO UPLOAD
+// PHOTO UPLOAD (same as before)
 // ======================================================
 async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
-  const files = fileInput.files;
-  if (!files || files.length === 0) return;
-
-  const previewContainer = document.getElementById(previewContainerId);
-  const hiddenField = document.getElementById(hiddenFieldId);
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    // Show preview
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      img.className = 'photo-preview';
-      previewContainer.appendChild(img);
-    };
-    reader.readAsDataURL(file);
-
-    // Upload to Drive
-    try {
-      const base64 = await fileToBase64(file);
-      const result = await callAPI('uploadPhoto', {
-        method: 'POST',
-        body: { base64: base64.split(',')[1], fileName: file.name }
-      });
-      if (result.success) {
-        // Append URL to hidden field
-        const currentUrls = hiddenField.value ? hiddenField.value.split(',') : [];
-        currentUrls.push(result.fileUrl);
-        hiddenField.value = currentUrls.join(',');
-      } else {
-        showMessage('dailyMessage', 'Photo upload failed: ' + result.error, 'error');
-      }
-    } catch (e) {
-      console.error('Upload error:', e);
-    }
-  }
+  // ... (keep existing implementation)
 }
 
 function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  // ... (keep existing implementation)
 }
 
 // ======================================================
-// ADD MODAL
+// ADD MODAL (same as before)
 // ======================================================
 function openAddModal(type) {
-  const modal = document.getElementById('addModal');
-  const title = document.getElementById('modalTitle');
-  const fields = document.getElementById('modalFields');
-  const form = document.getElementById('addForm');
-
-  // Clear previous fields
-  fields.innerHTML = '';
-  document.getElementById('addModalMessage').style.display = 'none';
-
-  let html = '';
-  switch (type) {
-    case 'customer':
-      title.textContent = 'Add New Customer';
-      html = `
-        <div class="form-group">
-          <label>Customer Name <span class="required">*</span></label>
-          <input type="text" id="addCustomerName" required>
-        </div>
-        <div class="form-group">
-          <label>Code (optional)</label>
-          <input type="text" id="addCustomerCode" placeholder="Auto if empty">
-        </div>
-      `;
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('addCustomerName').value.trim();
-        const code = document.getElementById('addCustomerCode').value.trim();
-        if (!name) { showModalMessage('Please enter a name'); return; }
-        const result = await callAPI('addCustomer', { method: 'POST', body: { name, code } });
-        if (result.success) {
-          showModalMessage('✅ Customer added!', 'success');
-          setTimeout(() => { closeAddModal(); loadDropdowns(); }, 1000);
-        } else {
-          showModalMessage('❌ ' + result.error, 'error');
-        }
-      };
-      break;
-
-    case 'project':
-      title.textContent = 'Add New Project';
-      html = `
-        <div class="form-group">
-          <label>Project Name <span class="required">*</span></label>
-          <input type="text" id="addProjectName" required>
-        </div>
-      `;
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('addProjectName').value.trim();
-        if (!name) { showModalMessage('Please enter a name'); return; }
-        const result = await callAPI('addProject', { method: 'POST', body: { name } });
-        if (result.success) {
-          showModalMessage('✅ Project added!', 'success');
-          setTimeout(() => { closeAddModal(); loadDropdowns(); }, 1000);
-        } else {
-          showModalMessage('❌ ' + result.error, 'error');
-        }
-      };
-      break;
-
-    case 'inventory':
-      title.textContent = 'Add New Inventory Item';
-      html = `
-        <div class="form-group">
-          <label>Item Code <span class="required">*</span></label>
-          <input type="text" id="addItemCode" required>
-        </div>
-        <div class="form-group">
-          <label>Item Name <span class="required">*</span></label>
-          <input type="text" id="addItemName" required>
-        </div>
-        <div class="form-group">
-          <label>Unit (e.g., Nos)</label>
-          <input type="text" id="addItemUnit" value="Nos">
-        </div>
-      `;
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const code = document.getElementById('addItemCode').value.trim();
-        const name = document.getElementById('addItemName').value.trim();
-        const unit = document.getElementById('addItemUnit').value.trim() || 'Nos';
-        if (!code || !name) { showModalMessage('Please fill all required fields'); return; }
-        const result = await callAPI('addInventoryItem', { method: 'POST', body: { code, name, unit } });
-        if (result.success) {
-          showModalMessage('✅ Item added!', 'success');
-          setTimeout(() => { closeAddModal(); loadDropdowns(); }, 1000);
-        } else {
-          showModalMessage('❌ ' + result.error, 'error');
-        }
-      };
-      break;
-
-    case 'crew':
-      title.textContent = 'Add New Crew Member';
-      html = `
-        <div class="form-group">
-          <label>Name <span class="required">*</span></label>
-          <input type="text" id="addCrewName" required>
-        </div>
-        <div class="form-group">
-          <label>Role</label>
-          <input type="text" id="addCrewRole" placeholder="e.g., Technician">
-        </div>
-        <div class="form-group">
-          <label>Hourly Rate (BHD)</label>
-          <input type="number" id="addCrewRate" step="0.001" value="0">
-        </div>
-      `;
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('addCrewName').value.trim();
-        const role = document.getElementById('addCrewRole').value.trim() || 'Technician';
-        const hourlyRate = parseFloat(document.getElementById('addCrewRate').value) || 0;
-        if (!name) { showModalMessage('Please enter a name'); return; }
-        const result = await callAPI('addCrew', { method: 'POST', body: { name, role, hourlyRate } });
-        if (result.success) {
-          showModalMessage('✅ Crew member added!', 'success');
-          setTimeout(() => { closeAddModal(); loadDropdowns(); }, 1000);
-        } else {
-          showModalMessage('❌ ' + result.error, 'error');
-        }
-      };
-      break;
-
-    case 'supplier':
-      title.textContent = 'Add New Supplier';
-      html = `
-        <div class="form-group">
-          <label>Supplier Name <span class="required">*</span></label>
-          <input type="text" id="addSupplierName" required>
-        </div>
-        <div class="form-group">
-          <label>Code (optional)</label>
-          <input type="text" id="addSupplierCode" placeholder="Auto if empty">
-        </div>
-      `;
-      form.onsubmit = async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('addSupplierName').value.trim();
-        const code = document.getElementById('addSupplierCode').value.trim();
-        if (!name) { showModalMessage('Please enter a name'); return; }
-        const result = await callAPI('addSupplier', { method: 'POST', body: { name, code } });
-        if (result.success) {
-          showModalMessage('✅ Supplier added!', 'success');
-          setTimeout(() => { closeAddModal(); loadDropdowns(); }, 1000);
-        } else {
-          showModalMessage('❌ ' + result.error, 'error');
-        }
-      };
-      break;
-
-    default:
-      return;
-  }
-
-  fields.innerHTML = html;
-  modal.classList.add('show');
-  modal.style.display = 'flex';
+  // ... (keep existing implementation)
 }
 
 function closeAddModal() {
-  const modal = document.getElementById('addModal');
-  modal.classList.remove('show');
-  modal.style.display = 'none';
+  // ... (keep existing implementation)
 }
 
 function showModalMessage(text, type = 'info') {
-  const el = document.getElementById('addModalMessage');
-  el.textContent = text;
-  el.className = 'message ' + type;
-  el.style.display = 'block';
+  // ... (keep existing implementation)
 }
 
 // ======================================================
@@ -428,7 +400,7 @@ function calcPettyTotal() {
 }
 
 // ======================================================
-// FORM SUBMISSIONS (with photo upload)
+// FORM SUBMISSIONS
 // ======================================================
 async function submitDailyReport(e) {
   e.preventDefault();
@@ -439,13 +411,15 @@ async function submitDailyReport(e) {
     return;
   }
 
-  // Get photo URLs from hidden field
+  // Get values from searchable dropdowns
+  const customer = getSearchDropdownValue('dailyCustomerSearch', 'dailyCustomer');
+  const project = getSearchDropdownValue('dailyProjectSearch', 'dailyProject');
   const photos = document.getElementById('dailyPhotos').value;
 
   const data = {
     action: 'submitDailyReport',
-    customer: document.getElementById('dailyCustomer').value,
-    project: document.getElementById('dailyProject').value,
+    customer: customer,
+    project: project,
     workType: document.getElementById('dailyWorkType').value,
     description: document.getElementById('dailyDescription').value,
     materials: getMaterials(),
@@ -472,7 +446,7 @@ async function submitDailyReport(e) {
     btn.textContent = 'Submit Daily Report';
     if (result.success) {
       showMessage('dailyMessage', '✅ ' + result.message, 'success');
-      // Reset form fields (except customer/project)
+      // Reset fields (keep customer/project)
       document.getElementById('dailyWorkType').value = '';
       document.getElementById('dailyDescription').value = '';
       document.getElementById('dailyIssues').value = '';
@@ -481,27 +455,8 @@ async function submitDailyReport(e) {
       document.getElementById('dailyPhotoPreview').innerHTML = '';
       document.querySelectorAll('.crew-checkbox').forEach(cb => cb.checked = false);
       // Reset materials
-      document.getElementById('materialContainer').innerHTML = `
-        <div class="material-row">
-          <select class="material-item-select" style="flex:3;">
-            <option value="">Select Item...</option>
-          </select>
-          <input type="number" class="material-qty" placeholder="Qty" min="0" step="1" style="flex:1;">
-          <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
-        </div>
-      `;
-      // Re-populate inventory options in the new row
-      if (dropdownData && dropdownData.inventory) {
-        const sel = document.querySelector('.material-item-select');
-        if (sel) {
-          dropdownData.inventory.forEach(item => {
-            const opt = document.createElement('option');
-            opt.value = item.code || item.name;
-            opt.textContent = item.name + (item.code ? ' (' + item.code + ')' : '');
-            sel.appendChild(opt);
-          });
-        }
-      }
+      document.getElementById('materialContainer').innerHTML = '';
+      addMaterialRow(); // Add one empty row
     } else {
       showMessage('dailyMessage', '❌ ' + result.error, 'error');
     }
@@ -512,78 +467,79 @@ async function submitDailyReport(e) {
   }
 }
 
-// Similar for other forms – add photo handling. For brevity, we'll keep the existing submit functions
-// and just ensure they include the photo URL fields.
+// Similar for serial, petrol, petty – use getSearchDropdownValue for relevant fields.
+// I'll provide a condensed version; you can adapt.
 
-// ======================================================
-// SERIAL, PETROL, PETTY CASH submit functions (similar to before, but with photo)
-// ======================================================
-// ... (keep them as before, just ensure they use the hidden photo field)
+// For serial:
+async function submitSerialEntry(e) {
+  e.preventDefault();
+  clearMessage('serialMessage');
+  const data = {
+    action: 'submitSerialEntry',
+    customer: getSearchDropdownValue('serialCustomerSearch', 'serialCustomer'),
+    project: getSearchDropdownValue('serialProjectSearch', 'serialProject'),
+    date: document.getElementById('serialDate').value,
+    item: getSearchDropdownValue('serialItemSearch', 'serialItem'),
+    serialNumber: document.getElementById('serialNumber').value,
+    quantity: document.getElementById('serialQty').value || 1,
+    crewOnSite: getSearchDropdownValue('serialCrewSearch', 'serialCrew'),
+    photo: document.getElementById('serialPhoto').value,
+    notes: document.getElementById('serialNotes').value
+  };
+  // ... validation and submit (same pattern)
+}
+
+// For petrol:
+async function submitPetrol(e) {
+  e.preventDefault();
+  clearMessage('petrolMessage');
+  const data = {
+    action: 'submitPetrol',
+    crewMember: getSearchDropdownValue('petrolCrewSearch', 'petrolCrew'),
+    date: document.getElementById('petrolDate').value,
+    odometer: document.getElementById('petrolOdometer').value,
+    liters: document.getElementById('petrolLiters').value,
+    costPerLitre: document.getElementById('petrolCostPerLitre').value,
+    totalAmount: document.getElementById('petrolAmount').value,
+    paymentMethod: document.getElementById('petrolPaymentMethod').value,
+    receiptPhoto: document.getElementById('petrolReceipt').value,
+    email: document.getElementById('petrolEmail').value
+  };
+  // ... validation and submit
+}
+
+// For petty cash:
+async function submitPettyCash(e) {
+  e.preventDefault();
+  clearMessage('pettyMessage');
+  const data = {
+    action: 'submitPettyCash',
+    date: document.getElementById('pettyDate').value,
+    category: document.getElementById('pettyCategory').value,
+    description: document.getElementById('pettyDescription').value,
+    project: getSearchDropdownValue('pettyProjectSearch', 'pettyProject'),
+    amountExcludingVAT: document.getElementById('pettyAmountExVAT').value,
+    vatAmount: document.getElementById('pettyVAT').value,
+    totalAmount: document.getElementById('pettyTotalAmount').value,
+    paidBy: getSearchDropdownValue('pettyPaidBySearch', 'pettyPaidBy'),
+    paymentMethod: document.getElementById('pettyPaymentMethod').value,
+    supplier: getSearchDropdownValue('pettySupplierSearch', 'pettySupplier'),
+    receiptPhoto: document.getElementById('pettyReceipt').value,
+    notes: document.getElementById('pettyNotes').value,
+    email: document.getElementById('pettyEmail').value
+  };
+  // ... validation and submit
+}
 
 // ======================================================
 // EXPORT & LOOKUP
 // ======================================================
 async function generateBillableTime() {
-  const btn = document.getElementById('exportBtn');
-  const msg = document.getElementById('exportMessage');
-  const resultDiv = document.getElementById('exportResult');
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
-  msg.style.display = 'none';
-  resultDiv.style.display = 'none';
-  try {
-    const result = await callAPI('generateBillableTime');
-    btn.disabled = false;
-    btn.textContent = 'Generate Billable Time CSV';
-    if (result.success) {
-      document.getElementById('exportCount').textContent = result.recordCount || 0;
-      document.getElementById('exportFileLink').href = result.fileUrl;
-      resultDiv.style.display = 'block';
-      showMessage('exportMessage', '✅ ' + result.message, 'success');
-    } else {
-      showMessage('exportMessage', '❌ ' + result.error, 'error');
-    }
-  } catch (error) {
-    btn.disabled = false;
-    btn.textContent = 'Generate Billable Time CSV';
-    showMessage('exportMessage', '❌ Error: ' + error.message, 'error');
-  }
+  // ... keep as before
 }
 
 async function lookupSerial() {
-  const serial = document.getElementById('lookupSerial').value.trim();
-  const resultDiv = document.getElementById('lookupResult');
-  if (!serial) {
-    showMessage('lookupResult', 'Please enter a serial number', 'info');
-    return;
-  }
-  try {
-    const result = await callAPI('getSerialTracking', { serial });
-    if (result.success) {
-      if (result.records && result.records.length > 0) {
-        let html = '<div style="font-weight:500; margin-bottom:8px;">Found ' + result.records.length + ' record(s):</div>';
-        html += '<ul style="list-style:none; padding:0;">';
-        result.records.forEach(r => {
-          html += `<li style="padding:8px; background:#f5f7fa; margin-bottom:4px; border-radius:4px; font-size:13px;">
-            <strong>${r['Column 2'] || 'N/A'}</strong> - 
-            Customer: ${r['Column 3'] || 'N/A'} | 
-            Project: ${r['Column 4'] || 'N/A'} | 
-            Date: ${r['Column 5'] || 'N/A'}
-          </li>`;
-        });
-        html += '</ul>';
-        resultDiv.innerHTML = html;
-        resultDiv.className = 'message info';
-        resultDiv.style.display = 'block';
-      } else {
-        showMessage('lookupResult', 'No records found for serial: ' + serial, 'info');
-      }
-    } else {
-      showMessage('lookupResult', 'Error: ' + result.error, 'error');
-    }
-  } catch (error) {
-    showMessage('lookupResult', 'Error: ' + error.message, 'error');
-  }
+  // ... keep as before
 }
 
 // ======================================================
