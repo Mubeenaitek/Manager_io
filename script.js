@@ -1,7 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR APPS SCRIPT WEB APP URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec'; // <-- Replace
+const API_BASE = 'https://script.google.com/macros/s/1PJK2gQqgAQrmBGrG_k3zPA1yz_LyoXYV4Bk65eNUt8rMMz9-UXkRJhSR/exec'; // <-- Replace
 
 // ======================================================
 // STATE
