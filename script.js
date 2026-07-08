@@ -1,15 +1,7 @@
 // ======================================================
 // CONFIGURATION - REPLACE WITH YOUR APPS SCRIPT WEB APP URL
 // ======================================================
-const API_BASE = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec'; // <-- Replace
-
-// ======================================================
-// STATE
-// ======================================================
-let dropdownData = null;
-
-// ======================================================
-// HELPERS
+const API_BASE = ''; https://script.google.com/macros/s/AKfycbwhLnCP1nBtPUYjStKuej5KaON6TxRN8kZ05LaGZGW438ll3rmTTIjoHtt5iIaNl_Os/exec
 // ======================================================
 function showMessage(id, text, type = 'info') {
   const el = document.getElementById(id);
