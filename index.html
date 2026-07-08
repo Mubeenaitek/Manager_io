@@ -32,21 +32,29 @@
     <!-- ========================================================= -->
     <section id="tab-daily" class="tab-content active">
       <form id="dailyForm">
-        <!-- Customer & Project with add buttons -->
-        <div class="form-row">
-          <div class="form-group">
-            <label>Customer <span class="required">*</span></label>
-            <div style="display:flex; gap:4px;">
-              <select id="dailyCustomer" required style="flex:1;"><option value="">Loading...</option></select>
-              <button type="button" class="btn-add-small" onclick="openAddModal('customer')">+</button>
+        <!-- Customer -->
+        <div class="form-group">
+          <label>Customer <span class="required">*</span></label>
+          <div style="display:flex; gap:4px;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="dailyCustomerSearch" placeholder="Type to search customer..." class="search-input">
+              <select id="dailyCustomer" required style="display:none;"></select>
+              <div id="dailyCustomerList" class="dropdown-list"></div>
             </div>
+            <button type="button" class="btn-add-small" onclick="openAddModal('customer')">+</button>
           </div>
-          <div class="form-group">
-            <label>Project <span class="required">*</span></label>
-            <div style="display:flex; gap:4px;">
-              <select id="dailyProject" required style="flex:1;"><option value="">Loading...</option></select>
-              <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
+        </div>
+
+        <!-- Project -->
+        <div class="form-group">
+          <label>Project <span class="required">*</span></label>
+          <div style="display:flex; gap:4px;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="dailyProjectSearch" placeholder="Type to search project..." class="search-input">
+              <select id="dailyProject" required style="display:none;"></select>
+              <div id="dailyProjectList" class="dropdown-list"></div>
             </div>
+            <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
           </div>
         </div>
 
@@ -69,14 +77,16 @@
           <textarea id="dailyDescription" placeholder="Describe work..."></textarea>
         </div>
 
-        <!-- Materials with Inventory dropdown -->
+        <!-- Materials with searchable inventory -->
         <div class="form-group">
           <label>Materials Used</label>
           <div id="materialContainer">
             <div class="material-row">
-              <select class="material-item-select" style="flex:3;">
-                <option value="">Select Item...</option>
-              </select>
+              <div style="flex:3; position:relative;">
+                <input type="text" class="material-search" placeholder="Search item..." style="width:100%;">
+                <select class="material-item-select" style="display:none;"></select>
+                <div class="material-list dropdown-list"></div>
+              </div>
               <input type="number" class="material-qty" placeholder="Qty" min="0" step="1" style="flex:1;">
               <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
             </div>
@@ -84,8 +94,10 @@
           <button type="button" class="add-material-btn" onclick="addMaterialRow()">+ Add Material</button>
         </div>
 
+        <!-- Crew (searchable checkboxes) -->
         <div class="form-group">
           <label>Who Worked? <span class="required">*</span></label>
+          <input type="text" id="crewSearch" placeholder="Search crew..." class="search-input">
           <div class="crew-checkboxes" id="crewCheckboxes"></div>
           <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+ Add Crew Member</button>
         </div>
@@ -112,7 +124,6 @@
           </div>
         </div>
 
-        <!-- Photo upload (file input with camera) -->
         <div class="form-group">
           <label>Site Photos</label>
           <input type="file" id="dailyPhotoInput" accept="image/*" capture="environment" multiple>
@@ -139,14 +150,22 @@
           <div class="form-group">
             <label>Customer <span class="required">*</span></label>
             <div style="display:flex; gap:4px;">
-              <select id="serialCustomer" required style="flex:1;"><option value="">Loading...</option></select>
+              <div style="flex:1; position:relative;">
+                <input type="text" id="serialCustomerSearch" placeholder="Search customer..." class="search-input">
+                <select id="serialCustomer" required style="display:none;"></select>
+                <div id="serialCustomerList" class="dropdown-list"></div>
+              </div>
               <button type="button" class="btn-add-small" onclick="openAddModal('customer')">+</button>
             </div>
           </div>
           <div class="form-group">
             <label>Project <span class="required">*</span></label>
             <div style="display:flex; gap:4px;">
-              <select id="serialProject" required style="flex:1;"><option value="">Loading...</option></select>
+              <div style="flex:1; position:relative;">
+                <input type="text" id="serialProjectSearch" placeholder="Search project..." class="search-input">
+                <select id="serialProject" required style="display:none;"></select>
+                <div id="serialProjectList" class="dropdown-list"></div>
+              </div>
               <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
             </div>
           </div>
@@ -160,10 +179,13 @@
         <div class="form-group">
           <label>Item <span class="required">*</span></label>
           <div style="display:flex; gap:4px;">
-            <input type="text" id="serialItem" placeholder="Item code or name" required style="flex:1;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="serialItemSearch" placeholder="Search inventory..." class="search-input">
+              <select id="serialItem" required style="display:none;"></select>
+              <div id="serialItemList" class="dropdown-list"></div>
+            </div>
             <button type="button" class="btn-add-small" onclick="openAddModal('inventory')">+</button>
           </div>
-          <small style="color:#666;">Enter item code or name from inventory, or add new via +</small>
         </div>
 
         <div class="form-group">
@@ -179,7 +201,11 @@
           <div class="form-group">
             <label>Crew On Site</label>
             <div style="display:flex; gap:4px;">
-              <select id="serialCrew" style="flex:1;"><option value="">Select...</option></select>
+              <div style="flex:1; position:relative;">
+                <input type="text" id="serialCrewSearch" placeholder="Search crew..." class="search-input">
+                <select id="serialCrew" style="display:none;"></select>
+                <div id="serialCrewList" class="dropdown-list"></div>
+              </div>
               <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
             </div>
           </div>
@@ -217,7 +243,11 @@
         <div class="form-group">
           <label>Crew Member <span class="required">*</span></label>
           <div style="display:flex; gap:4px;">
-            <select id="petrolCrew" required style="flex:1;"><option value="">Loading...</option></select>
+            <div style="flex:1; position:relative;">
+              <input type="text" id="petrolCrewSearch" placeholder="Search crew..." class="search-input">
+              <select id="petrolCrew" required style="display:none;"></select>
+              <div id="petrolCrewList" class="dropdown-list"></div>
+            </div>
             <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
           </div>
         </div>
@@ -307,7 +337,11 @@
         <div class="form-group">
           <label>Related Project</label>
           <div style="display:flex; gap:4px;">
-            <select id="pettyProject" style="flex:1;"><option value="">Select...</option></select>
+            <div style="flex:1; position:relative;">
+              <input type="text" id="pettyProjectSearch" placeholder="Search project..." class="search-input">
+              <select id="pettyProject" style="display:none;"></select>
+              <div id="pettyProjectList" class="dropdown-list"></div>
+            </div>
             <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
           </div>
         </div>
@@ -332,7 +366,11 @@
           <div class="form-group">
             <label>Paid By</label>
             <div style="display:flex; gap:4px;">
-              <select id="pettyPaidBy" style="flex:1;"><option value="">Select...</option></select>
+              <div style="flex:1; position:relative;">
+                <input type="text" id="pettyPaidBySearch" placeholder="Search crew..." class="search-input">
+                <select id="pettyPaidBy" style="display:none;"></select>
+                <div id="pettyPaidByList" class="dropdown-list"></div>
+              </div>
               <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
             </div>
           </div>
@@ -349,7 +387,11 @@
         <div class="form-group">
           <label>Supplier</label>
           <div style="display:flex; gap:4px;">
-            <input type="text" id="pettySupplier" placeholder="Supplier name" style="flex:1;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="pettySupplierSearch" placeholder="Search supplier..." class="search-input">
+              <select id="pettySupplier" style="display:none;"></select>
+              <div id="pettySupplierList" class="dropdown-list"></div>
+            </div>
             <button type="button" class="btn-add-small" onclick="openAddModal('supplier')">+</button>
           </div>
         </div>
