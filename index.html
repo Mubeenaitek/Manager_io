@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Manager.io Field Data</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -24,18 +24,127 @@
     <!-- Daily Report -->
     <section id="tab-daily" class="tab-content active">
       <form id="dailyForm">
-        <!-- ... same as previous HTML but without embedded script ... -->
-        <!-- We'll use separate script.js for logic -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>Customer <span class="required">*</span></label>
+            <select id="dailyCustomer"><option value="">Loading...</option></select>
+          </div>
+          <div class="form-group">
+            <label>Project <span class="required">*</span></label>
+            <select id="dailyProject"><option value="">Loading...</option></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Type of Work Done</label>
+          <select id="dailyWorkType">
+            <option value="">Select...</option>
+            <option value="Installation">Installation</option>
+            <option value="Configuration">Configuration</option>
+            <option value="Maintenance">Maintenance</option>
+            <option value="Troubleshooting">Troubleshooting</option>
+            <option value="Site Survey">Site Survey</option>
+            <option value="Project">Project</option>
+            <option value="Device Mounting">Device Mounting</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Detailed Work Description</label>
+          <textarea id="dailyDescription" placeholder="Describe work..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Materials Used</label>
+          <div id="materialContainer">
+            <div class="material-row">
+              <input type="text" class="material-item" placeholder="Item">
+              <input type="number" class="material-qty" placeholder="Qty">
+              <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
+            </div>
+          </div>
+          <button type="button" class="add-material-btn" onclick="addMaterialRow()">+ Add Material</button>
+        </div>
+        <div class="form-group">
+          <label>Who Worked? <span class="required">*</span></label>
+          <div class="crew-checkboxes" id="crewCheckboxes"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date <span class="required">*</span></label>
+            <input type="date" id="dailyDate" required>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="dailyEmail" placeholder="user@email.com">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Arrived <span class="required">*</span></label>
+            <input type="time" id="dailyStartTime" required>
+          </div>
+          <div class="form-group">
+            <label>Left <span class="required">*</span></label>
+            <input type="time" id="dailyEndTime" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Photos (URL)</label>
+          <input type="url" id="dailyPhotos" placeholder="https://drive.google.com/...">
+        </div>
+        <div class="form-group">
+          <label>Issues / Follow‑up</label>
+          <textarea id="dailyIssues" placeholder="Any issues..."></textarea>
+        </div>
+        <button type="submit" class="btn">Submit Daily Report</button>
+        <div id="dailyMessage" class="message"></div>
       </form>
-      <div id="dailyMessage" class="message"></div>
     </section>
 
     <!-- Serial Entry -->
     <section id="tab-serial" class="tab-content">
       <form id="serialForm">
-        <!-- ... -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>Customer <span class="required">*</span></label>
+            <select id="serialCustomer"><option value="">Loading...</option></select>
+          </div>
+          <div class="form-group">
+            <label>Project <span class="required">*</span></label>
+            <select id="serialProject"><option value="">Loading...</option></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Date <span class="required">*</span></label>
+          <input type="date" id="serialDate" required>
+        </div>
+        <div class="form-group">
+          <label>Item <span class="required">*</span></label>
+          <input type="text" id="serialItem" placeholder="Item code or name" required>
+        </div>
+        <div class="form-group">
+          <label>Serial Number <span class="required">*</span></label>
+          <input type="text" id="serialNumber" placeholder="Enter serial" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="serialQty" value="1" min="0" step="1">
+          </div>
+          <div class="form-group">
+            <label>Crew On Site</label>
+            <select id="serialCrew"><option value="">Select...</option></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Photo (URL)</label>
+          <input type="url" id="serialPhoto" placeholder="https://drive.google.com/...">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="serialNotes" placeholder="Additional notes..."></textarea>
+        </div>
+        <button type="submit" class="btn">Submit Serial Entry</button>
+        <div id="serialMessage" class="message"></div>
       </form>
-      <div id="serialMessage" class="message"></div>
       <hr>
       <h3>🔍 Lookup Serial</h3>
       <div style="display:flex; gap:8px; align-items:end;">
@@ -48,17 +157,130 @@
     <!-- Petrol -->
     <section id="tab-petrol" class="tab-content">
       <form id="petrolForm">
-        <!-- ... -->
+        <div class="form-group">
+          <label>Crew Member <span class="required">*</span></label>
+          <select id="petrolCrew"><option value="">Select...</option></select>
+        </div>
+        <div class="form-group">
+          <label>Date <span class="required">*</span></label>
+          <input type="date" id="petrolDate" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Odometer (km)</label>
+            <input type="number" id="petrolOdometer" min="0">
+          </div>
+          <div class="form-group">
+            <label>Liters</label>
+            <input type="number" id="petrolLiters" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Cost/Litre (BHD)</label>
+            <input type="number" id="petrolCostPerLitre" min="0" step="0.001">
+          </div>
+          <div class="form-group">
+            <label>Total Amount (BHD) <span class="required">*</span></label>
+            <input type="number" id="petrolAmount" min="0" step="0.001" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Payment Method</label>
+          <select id="petrolPaymentMethod">
+            <option value="Cash">Cash</option>
+            <option value="Ila Credit Card">Ila Credit Card</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Receipt (URL)</label>
+          <input type="url" id="petrolReceipt" placeholder="https://drive.google.com/...">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="petrolEmail" placeholder="user@email.com">
+        </div>
+        <button type="submit" class="btn">Submit Petrol Entry</button>
+        <div id="petrolMessage" class="message"></div>
       </form>
-      <div id="petrolMessage" class="message"></div>
     </section>
 
     <!-- Petty Cash -->
     <section id="tab-petty" class="tab-content">
       <form id="pettyForm">
-        <!-- ... -->
+        <div class="form-group">
+          <label>Date <span class="required">*</span></label>
+          <input type="date" id="pettyDate" required>
+        </div>
+        <div class="form-group">
+          <label>Category <span class="required">*</span></label>
+          <select id="pettyCategory">
+            <option value="">Select...</option>
+            <option value="Materials/Tools">Materials/Tools</option>
+            <option value="Consumables">Consumables</option>
+            <option value="Transport/Taxi">Transport/Taxi</option>
+            <option value="Parking/Tolls">Parking/Tolls</option>
+            <option value="Food/Water - Team">Food/Water - Team</option>
+            <option value="Communication">Communication</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Description <span class="required">*</span></label>
+          <textarea id="pettyDescription" required placeholder="Describe expense..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Related Project</label>
+          <select id="pettyProject"><option value="">Select...</option></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Amount (excl. VAT)</label>
+            <input type="number" id="pettyAmountExVAT" min="0" step="0.001">
+          </div>
+          <div class="form-group">
+            <label>VAT Amount</label>
+            <input type="number" id="pettyVAT" min="0" step="0.001">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Total Amount (incl. VAT) <span class="required">*</span></label>
+          <input type="number" id="pettyTotalAmount" min="0" step="0.001" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Paid By</label>
+            <select id="pettyPaidBy"><option value="">Select...</option></select>
+          </div>
+          <div class="form-group">
+            <label>Payment Method</label>
+            <select id="pettyPaymentMethod">
+              <option value="Cash">Cash</option>
+              <option value="Ila Credit Card">Ila Credit Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Supplier</label>
+          <input type="text" id="pettySupplier" placeholder="Supplier name">
+        </div>
+        <div class="form-group">
+          <label>Receipt (URL)</label>
+          <input type="url" id="pettyReceipt" placeholder="https://drive.google.com/...">
+        </div>
+        <div class="form-group">
+          <label>Additional Notes</label>
+          <textarea id="pettyNotes" placeholder="Additional notes..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="pettyEmail" placeholder="user@email.com">
+        </div>
+        <button type="submit" class="btn">Submit Petty Cash</button>
+        <div id="pettyMessage" class="message"></div>
       </form>
-      <div id="pettyMessage" class="message"></div>
     </section>
 
     <!-- Export -->
