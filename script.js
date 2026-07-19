@@ -30,14 +30,22 @@ function clearMessage(id) {
 // API CALLS
 // ======================================================
 async function callAPI(action, data = {}) {
-  const url = API_BASE + '?action=' + action + (data.serial ? '&serial=' + encodeURIComponent(data.serial) : '');
-  const options = {
-    method: data.method || 'GET',
-    headers: { 'Content-Type': 'application/json' }
-  };
-  if (data.method === 'POST' || data.body) {
+  const method = data.method || 'GET';
+  let url = API_BASE + '?action=' + encodeURIComponent(action);
+  if (data.serial) url += '&serial=' + encodeURIComponent(data.serial);
+
+  const options = { method };
+  if (method === 'POST') {
+    // IMPORTANT: Do NOT set Content-Type: application/json here.
+    // Google Apps Script web apps don't implement doOptions(), so a
+    // "real" JSON content type triggers a CORS preflight that always
+    // fails. text/plain is a CORS-safelisted content type (no preflight),
+    // and Code.gs already does JSON.parse(e.postData.contents) regardless
+    // of the declared content type, so this is safe.
+    options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
     options.body = JSON.stringify({ action, ...data.body });
   }
+
   const response = await fetch(url, options);
   return response.json();
 }
@@ -79,7 +87,12 @@ function populateSearchDropdown(searchInputId, listId, options, hiddenSelectId =
   input.addEventListener('input', function() {
     const search = this.value.toLowerCase().trim();
     const opts = JSON.parse(this.dataset.options || '[]');
-    const filtered = opts.filter(opt => opt.label.toLowerCase().includes(search));
+    // Search matches against the visible label (name + code) AND the
+    // underlying value (code), so typing a customer/item code works too.
+    const filtered = opts.filter(opt =>
+      opt.label.toLowerCase().includes(search) ||
+      String(opt.value || '').toLowerCase().includes(search)
+    );
     renderDropdownList(listId, filtered);
     if (filtered.length > 0) {
       list.classList.add('show');
@@ -129,7 +142,7 @@ function getSearchDropdownValue(searchInputId, hiddenSelectId = null) {
   // If we have a hidden select, use its value
   if (hiddenSelectId) {
     const select = document.getElementById(hiddenSelectId);
-    if (select) return select.value;
+    if (select && select.value) return select.value;
   }
   // Otherwise try to find matching option
   const opts = JSON.parse(input.dataset.options || '[]');
@@ -156,44 +169,49 @@ async function loadDropdowns() {
 }
 
 function populateAllDropdowns(data) {
-  // Helper to create options array for searchable dropdowns
-  const toOptions = (items, labelKey, valueKey) =>
-    items.map(item => ({ value: item[valueKey], label: item[labelKey] }));
+  // Helper to create a searchable label that includes the code, so users
+  // can find a record by typing either its name or its code.
+  const toOptions = (items, valueKey) =>
+    items.map(item => ({
+      value: item[valueKey],
+      label: item.name + (item.code ? ' (' + item.code + ')' : '')
+    }));
 
   // --- Customers ---
-  const customerOpts = toOptions(data.customers, 'name', 'code');
+  const customerOpts = toOptions(data.customers, 'code');
   populateSearchDropdown('dailyCustomerSearch', 'dailyCustomerList', customerOpts, 'dailyCustomer');
   populateSearchDropdown('serialCustomerSearch', 'serialCustomerList', customerOpts, 'serialCustomer');
 
   // --- Projects ---
-  const projectOpts = toOptions(data.projects, 'name', 'name');
+  const projectOpts = data.projects.map(p => ({ value: p.name, label: p.name }));
   populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
   populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
   populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
 
   // --- Inventory (for serial item) ---
-  const inventoryOpts = toOptions(data.inventory, 'name', 'code');
+  const inventoryOpts = data.inventory.map(i => ({
+    value: i.code || i.name,
+    label: i.name + (i.code ? ' (' + i.code + ')' : '')
+  }));
   populateSearchDropdown('serialItemSearch', 'serialItemList', inventoryOpts, 'serialItem');
 
   // --- Crew ---
-  const crewOpts = toOptions(data.crew, 'name', 'name');
+  const crewOpts = data.crew.map(c => ({ value: c.name, label: c.name + (c.role ? ' - ' + c.role : '') }));
   populateSearchDropdown('serialCrewSearch', 'serialCrewList', crewOpts, 'serialCrew');
   populateSearchDropdown('petrolCrewSearch', 'petrolCrewList', crewOpts, 'petrolCrew');
   populateSearchDropdown('pettyPaidBySearch', 'pettyPaidByList', crewOpts, 'pettyPaidBy');
 
   // --- Suppliers ---
-  const supplierOpts = toOptions(data.suppliers || [], 'name', 'code');
+  const supplierOpts = toOptions(data.suppliers || [], 'code');
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
 
   // --- Crew Checkboxes (with search) ---
   populateCrewCheckboxes(data.crew);
 
   // --- Material rows (inventory) ---
-  // The material rows are dynamic; we'll set up a function to populate them later.
-  // We'll also need to re-populate material rows when new ones are added.
   populateMaterialRows(data.inventory);
 
-  // Also store inventory for later use in addMaterialRow
+  // Also store inventory/customers for later use in dynamically added rows
   window._inventoryData = data.inventory;
 }
 
@@ -357,29 +375,182 @@ function getSelectedCrew() {
 }
 
 // ======================================================
-// PHOTO UPLOAD (same as before)
+// PHOTO UPLOAD
 // ======================================================
-async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
-  // ... (keep existing implementation)
-}
-
 function fileToBase64(file) {
-  // ... (keep existing implementation)
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || '';
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
+  const files = Array.from(fileInput.files || []);
+  if (files.length === 0) return;
+
+  const hiddenField = document.getElementById(hiddenFieldId);
+  const preview = document.getElementById(previewContainerId);
+  if (!hiddenField || !preview) return;
+
+  // Single-file inputs (serial/petrol/petty receipts) replace any previous
+  // selection instead of accumulating.
+  let urls = hiddenField.value ? hiddenField.value.split(',').filter(Boolean) : [];
+  if (!fileInput.multiple) {
+    urls = [];
+    preview.innerHTML = '';
+  }
+
+  for (const file of files) {
+    const img = document.createElement('img');
+    img.className = 'photo-preview';
+    img.src = URL.createObjectURL(file);
+    img.style.opacity = '0.5';
+    preview.appendChild(img);
+
+    try {
+      const base64 = await fileToBase64(file);
+      const result = await callAPI('uploadPhoto', { method: 'POST', body: { base64, fileName: file.name } });
+      if (result.success) {
+        urls.push(result.fileUrl);
+        hiddenField.value = urls.join(',');
+        img.style.opacity = '1';
+      } else {
+        img.style.opacity = '1';
+        img.style.border = '2px solid #d93025';
+        img.title = 'Upload failed: ' + result.error;
+      }
+    } catch (err) {
+      img.style.opacity = '1';
+      img.style.border = '2px solid #d93025';
+      img.title = 'Upload failed: ' + err.message;
+    }
+  }
+
+  fileInput.value = '';
 }
 
 // ======================================================
-// ADD MODAL (same as before)
+// ADD MODAL
 // ======================================================
+const ADD_MODAL_CONFIG = {
+  customer: {
+    title: 'Add Customer',
+    action: 'addCustomer',
+    fields: [
+      { id: 'name', label: 'Customer Name', type: 'text', required: true },
+      { id: 'code', label: 'Code (optional)', type: 'text', required: false }
+    ]
+  },
+  project: {
+    title: 'Add Project',
+    action: 'addProject',
+    fields: [
+      { id: 'name', label: 'Project Name', type: 'text', required: true }
+    ]
+  },
+  inventory: {
+    title: 'Add Inventory Item',
+    action: 'addInventoryItem',
+    fields: [
+      { id: 'code', label: 'Item Code', type: 'text', required: true },
+      { id: 'name', label: 'Item Name', type: 'text', required: true },
+      { id: 'unit', label: 'Unit (e.g. Nos)', type: 'text', required: false }
+    ]
+  },
+  crew: {
+    title: 'Add Crew Member',
+    action: 'addCrew',
+    fields: [
+      { id: 'name', label: 'Name', type: 'text', required: true },
+      { id: 'role', label: 'Role', type: 'text', required: false },
+      { id: 'hourlyRate', label: 'Hourly Rate (BHD)', type: 'number', required: false }
+    ]
+  },
+  supplier: {
+    title: 'Add Supplier',
+    action: 'addSupplier',
+    fields: [
+      { id: 'name', label: 'Supplier Name', type: 'text', required: true },
+      { id: 'code', label: 'Code (optional)', type: 'text', required: false }
+    ]
+  }
+};
+let currentAddType = null;
+
 function openAddModal(type) {
-  // ... (keep existing implementation)
+  const cfg = ADD_MODAL_CONFIG[type];
+  if (!cfg) return;
+  currentAddType = type;
+
+  document.getElementById('modalTitle').textContent = cfg.title;
+  const container = document.getElementById('modalFields');
+  container.innerHTML = cfg.fields.map(f => `
+    <div class="form-group">
+      <label>${f.label}${f.required ? ' <span class="required">*</span>' : ''}</label>
+      <input type="${f.type}" id="modal_${f.id}" ${f.required ? 'required' : ''}>
+    </div>
+  `).join('');
+
+  const msg = document.getElementById('addModalMessage');
+  msg.style.display = 'none';
+  msg.textContent = '';
+
+  document.getElementById('addModal').style.display = 'flex';
+  const firstInput = container.querySelector('input');
+  if (firstInput) firstInput.focus();
 }
 
 function closeAddModal() {
-  // ... (keep existing implementation)
+  document.getElementById('addModal').style.display = 'none';
+  currentAddType = null;
 }
 
 function showModalMessage(text, type = 'info') {
-  // ... (keep existing implementation)
+  const el = document.getElementById('addModalMessage');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'message ' + type;
+  el.style.display = 'block';
+}
+
+async function handleAddFormSubmit(e) {
+  e.preventDefault();
+  if (!currentAddType) return;
+  const cfg = ADD_MODAL_CONFIG[currentAddType];
+
+  const data = { action: cfg.action };
+  for (const f of cfg.fields) {
+    const el = document.getElementById('modal_' + f.id);
+    const val = el ? el.value.trim() : '';
+    if (f.required && !val) {
+      showModalMessage('Please fill: ' + f.label, 'error');
+      return;
+    }
+    data[f.id] = val;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    const result = await callAPI(cfg.action, { method: 'POST', body: data });
+    if (result.success) {
+      showModalMessage('✅ Added successfully', 'success');
+      await loadDropdowns();
+      setTimeout(closeAddModal, 800);
+    } else {
+      showModalMessage('❌ ' + result.error, 'error');
+    }
+  } catch (err) {
+    showModalMessage('❌ ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ======================================================
@@ -467,10 +638,6 @@ async function submitDailyReport(e) {
   }
 }
 
-// Similar for serial, petrol, petty – use getSearchDropdownValue for relevant fields.
-// I'll provide a condensed version; you can adapt.
-
-// For serial:
 async function submitSerialEntry(e) {
   e.preventDefault();
   clearMessage('serialMessage');
@@ -480,16 +647,42 @@ async function submitSerialEntry(e) {
     project: getSearchDropdownValue('serialProjectSearch', 'serialProject'),
     date: document.getElementById('serialDate').value,
     item: getSearchDropdownValue('serialItemSearch', 'serialItem'),
-    serialNumber: document.getElementById('serialNumber').value,
+    serialNumber: document.getElementById('serialNumber').value.trim(),
     quantity: document.getElementById('serialQty').value || 1,
     crewOnSite: getSearchDropdownValue('serialCrewSearch', 'serialCrew'),
     photo: document.getElementById('serialPhoto').value,
     notes: document.getElementById('serialNotes').value
   };
-  // ... validation and submit (same pattern)
+
+  if (!data.customer || !data.project || !data.date || !data.item || !data.serialNumber) {
+    showMessage('serialMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitSerialEntry', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Serial Entry';
+    if (result.success) {
+      showMessage('serialMessage', '✅ ' + result.message, 'success');
+      document.getElementById('serialNumber').value = '';
+      document.getElementById('serialQty').value = 1;
+      document.getElementById('serialNotes').value = '';
+      document.getElementById('serialPhoto').value = '';
+      document.getElementById('serialPhotoPreview').innerHTML = '';
+    } else {
+      showMessage('serialMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Serial Entry';
+    showMessage('serialMessage', '❌ Error: ' + error.message, 'error');
+  }
 }
 
-// For petrol:
 async function submitPetrol(e) {
   e.preventDefault();
   clearMessage('petrolMessage');
@@ -505,10 +698,37 @@ async function submitPetrol(e) {
     receiptPhoto: document.getElementById('petrolReceipt').value,
     email: document.getElementById('petrolEmail').value
   };
-  // ... validation and submit
+
+  if (!data.crewMember || !data.date || !data.totalAmount) {
+    showMessage('petrolMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitPetrol', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Petrol Entry';
+    if (result.success) {
+      showMessage('petrolMessage', '✅ ' + result.message, 'success');
+      document.getElementById('petrolOdometer').value = '';
+      document.getElementById('petrolLiters').value = '';
+      document.getElementById('petrolCostPerLitre').value = '';
+      document.getElementById('petrolAmount').value = '';
+      document.getElementById('petrolReceipt').value = '';
+      document.getElementById('petrolReceiptPreview').innerHTML = '';
+    } else {
+      showMessage('petrolMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Petrol Entry';
+    showMessage('petrolMessage', '❌ Error: ' + error.message, 'error');
+  }
 }
 
-// For petty cash:
 async function submitPettyCash(e) {
   e.preventDefault();
   clearMessage('pettyMessage');
@@ -528,18 +748,97 @@ async function submitPettyCash(e) {
     notes: document.getElementById('pettyNotes').value,
     email: document.getElementById('pettyEmail').value
   };
-  // ... validation and submit
+
+  if (!data.date || !data.category || !data.description || !data.totalAmount) {
+    showMessage('pettyMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitPettyCash', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit Petty Cash';
+    if (result.success) {
+      showMessage('pettyMessage', '✅ ' + result.message, 'success');
+      document.getElementById('pettyDescription').value = '';
+      document.getElementById('pettyAmountExVAT').value = '';
+      document.getElementById('pettyVAT').value = '';
+      document.getElementById('pettyTotalAmount').value = '';
+      document.getElementById('pettyNotes').value = '';
+      document.getElementById('pettyReceipt').value = '';
+      document.getElementById('pettyReceiptPreview').innerHTML = '';
+    } else {
+      showMessage('pettyMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit Petty Cash';
+    showMessage('pettyMessage', '❌ Error: ' + error.message, 'error');
+  }
 }
 
 // ======================================================
 // EXPORT & LOOKUP
 // ======================================================
 async function generateBillableTime() {
-  // ... keep as before
+  clearMessage('exportMessage');
+  document.getElementById('exportResult').style.display = 'none';
+  try {
+    const result = await callAPI('generateBillableTimeCSV');
+    if (result.success) {
+      showMessage('exportMessage', '✅ ' + result.message, 'success');
+      document.getElementById('exportCount').textContent = result.recordCount;
+      const link = document.getElementById('exportFileLink');
+      link.href = result.fileUrl;
+      document.getElementById('exportResult').style.display = 'block';
+    } else {
+      showMessage('exportMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    showMessage('exportMessage', '❌ Error: ' + error.message, 'error');
+  }
 }
 
 async function lookupSerial() {
-  // ... keep as before
+  const serial = document.getElementById('lookupSerial').value.trim();
+  const resultEl = document.getElementById('lookupResult');
+  if (!serial) {
+    resultEl.textContent = 'Enter a serial number';
+    resultEl.className = 'message error';
+    resultEl.style.display = 'block';
+    return;
+  }
+  try {
+    const result = await callAPI('getSerialTracking', { serial });
+    if (result.success) {
+      if (result.records.length === 0) {
+        resultEl.textContent = 'No records found for ' + serial;
+        resultEl.className = 'message info';
+      } else {
+        resultEl.innerHTML = result.records.map(r => `
+          <div style="border-bottom:1px solid #e0e0e0; padding:8px 0;">
+            <strong>${r['Column 1']}</strong> — ${r['Column 2']}<br>
+            Customer: ${r['Column 3']} | Project: ${r['Column 4']}<br>
+            Date: ${r['Column 5']} | Crew: ${r['Column 6']}<br>
+            Notes: ${r['Column 7'] || '—'}
+          </div>
+        `).join('');
+        resultEl.className = 'message success';
+      }
+      resultEl.style.display = 'block';
+    } else {
+      resultEl.textContent = '❌ ' + result.error;
+      resultEl.className = 'message error';
+      resultEl.style.display = 'block';
+    }
+  } catch (error) {
+    resultEl.textContent = '❌ ' + error.message;
+    resultEl.className = 'message error';
+    resultEl.style.display = 'block';
+  }
 }
 
 // ======================================================
@@ -574,6 +873,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('serialForm').addEventListener('submit', submitSerialEntry);
   document.getElementById('petrolForm').addEventListener('submit', submitPetrol);
   document.getElementById('pettyForm').addEventListener('submit', submitPettyCash);
+  document.getElementById('addForm').addEventListener('submit', handleAddFormSubmit);
 
   // Photo input events
   document.getElementById('dailyPhotoInput').addEventListener('change', function() {
