@@ -150,6 +150,18 @@ function getSearchDropdownValue(searchInputId, hiddenSelectId = null) {
   return found ? found.value : input.value.trim();
 }
 
+/**
+ * Clear a searchable dropdown's text and its paired hidden select value.
+ */
+function resetSearchDropdown(searchInputId, hiddenSelectId = null) {
+  const input = document.getElementById(searchInputId);
+  if (input) input.value = '';
+  if (hiddenSelectId) {
+    const select = document.getElementById(hiddenSelectId);
+    if (select) select.value = '';
+  }
+}
+
 // ======================================================
 // LOAD DROPDOWNS
 // ======================================================
@@ -197,7 +209,6 @@ function populateAllDropdowns(data) {
 
   // --- Crew ---
   const crewOpts = data.crew.map(c => ({ value: c.name, label: c.name + (c.role ? ' - ' + c.role : '') }));
-  populateSearchDropdown('serialCrewSearch', 'serialCrewList', crewOpts, 'serialCrew');
   populateSearchDropdown('petrolCrewSearch', 'petrolCrewList', crewOpts, 'petrolCrew');
   populateSearchDropdown('pettyPaidBySearch', 'pettyPaidByList', crewOpts, 'pettyPaidBy');
 
@@ -206,7 +217,10 @@ function populateAllDropdowns(data) {
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
 
   // --- Crew Checkboxes (with search) ---
-  populateCrewCheckboxes(data.crew);
+  // Daily tab's "Who Worked?" and Serial tab's "Crew On Site" both need to
+  // support selecting multiple staff, so both use the same checkbox pattern.
+  populateCrewCheckboxes(data.crew, 'crewCheckboxes', 'crewSearch');
+  populateCrewCheckboxes(data.crew, 'serialCrewCheckboxes', 'serialCrewFilterSearch');
 
   // --- Material rows (inventory) ---
   populateMaterialRows(data.inventory);
@@ -215,9 +229,16 @@ function populateAllDropdowns(data) {
   window._inventoryData = data.inventory;
 }
 
-function populateCrewCheckboxes(crew) {
-  const container = document.getElementById('crewCheckboxes');
+function populateCrewCheckboxes(crew, containerId = 'crewCheckboxes', searchInputId = 'crewSearch') {
+  const container = document.getElementById(containerId);
   if (!container) return;
+
+  // Preserve any selections already made (e.g. a refresh triggered mid-form)
+  // so re-populating the list doesn't silently uncheck the user's picks.
+  const previouslyChecked = new Set(
+    Array.from(container.querySelectorAll('.crew-checkbox:checked')).map(cb => cb.value)
+  );
+
   container.innerHTML = '';
   crew.forEach(c => {
     const label = document.createElement('label');
@@ -225,14 +246,16 @@ function populateCrewCheckboxes(crew) {
     cb.type = 'checkbox';
     cb.value = c.name;
     cb.className = 'crew-checkbox';
+    if (previouslyChecked.has(c.name)) cb.checked = true;
     label.appendChild(cb);
     label.appendChild(document.createTextNode(c.name + ' (' + c.role + ')'));
     container.appendChild(label);
   });
 
   // Attach search filter for crew
-  const searchInput = document.getElementById('crewSearch');
-  if (searchInput) {
+  const searchInput = document.getElementById(searchInputId);
+  if (searchInput && !searchInput.dataset.filterBound) {
+    searchInput.dataset.filterBound = 'true';
     searchInput.addEventListener('input', function() {
       const query = this.value.toLowerCase().trim();
       container.querySelectorAll('label').forEach(label => {
@@ -374,9 +397,17 @@ function getMaterials() {
 // ======================================================
 // CREW CHECKBOX GETTER
 // ======================================================
-function getSelectedCrew() {
-  const checkboxes = document.querySelectorAll('.crew-checkbox:checked');
+function getSelectedCrew(containerId = 'crewCheckboxes') {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  const checkboxes = container.querySelectorAll('.crew-checkbox:checked');
   return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function clearSelectedCrew(containerId = 'crewCheckboxes') {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.crew-checkbox:checked').forEach(cb => cb.checked = false);
 }
 
 // ======================================================
@@ -670,7 +701,7 @@ function calcPettyTotal() {
 async function submitDailyReport(e) {
   e.preventDefault();
   clearMessage('dailyMessage');
-  const crew = getSelectedCrew();
+  const crew = getSelectedCrew('crewCheckboxes');
   if (crew.length === 0) {
     showMessage('dailyMessage', 'Please select at least one crew member', 'error');
     return;
@@ -711,17 +742,24 @@ async function submitDailyReport(e) {
     btn.textContent = 'Submit Daily Report';
     if (result.success) {
       showMessage('dailyMessage', '✅ ' + result.message, 'success');
-      // Reset fields (keep customer/project)
+      // Fully reset the form for the next entry.
+      resetSearchDropdown('dailyCustomerSearch', 'dailyCustomer');
+      resetSearchDropdown('dailyProjectSearch', 'dailyProject');
       document.getElementById('dailyWorkType').value = '';
       document.getElementById('dailyDescription').value = '';
       document.getElementById('dailyIssues').value = '';
       document.getElementById('dailyEmail').value = '';
       document.getElementById('dailyPhotos').value = '';
       document.getElementById('dailyPhotoPreview').innerHTML = '';
-      document.querySelectorAll('.crew-checkbox').forEach(cb => cb.checked = false);
+      clearSelectedCrew('crewCheckboxes');
       // Reset materials
       document.getElementById('materialContainer').innerHTML = '';
       addMaterialRow(); // Add one empty row
+      // Reset date/time back to defaults (today / now)
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('dailyDate').value = today;
+      document.getElementById('dailyStartTime').value = new Date().toTimeString().slice(0, 5);
+      document.getElementById('dailyEndTime').value = '';
     } else {
       showMessage('dailyMessage', '❌ ' + result.error, 'error');
     }
@@ -743,7 +781,7 @@ async function submitSerialEntry(e) {
     item: getSearchDropdownValue('serialItemSearch', 'serialItem'),
     serialNumber: document.getElementById('serialNumber').value.trim(),
     quantity: document.getElementById('serialQty').value || 1,
-    crewOnSite: getSearchDropdownValue('serialCrewSearch', 'serialCrew'),
+    crewOnSite: getSelectedCrew('serialCrewCheckboxes').join(', '),
     photo: document.getElementById('serialPhoto').value,
     notes: document.getElementById('serialNotes').value
   };
@@ -762,11 +800,17 @@ async function submitSerialEntry(e) {
     btn.textContent = 'Submit Serial Entry';
     if (result.success) {
       showMessage('serialMessage', '✅ ' + result.message, 'success');
+      // Fully reset the form for the next entry.
+      resetSearchDropdown('serialCustomerSearch', 'serialCustomer');
+      resetSearchDropdown('serialProjectSearch', 'serialProject');
+      resetSearchDropdown('serialItemSearch', 'serialItem');
       document.getElementById('serialNumber').value = '';
       document.getElementById('serialQty').value = 1;
+      clearSelectedCrew('serialCrewCheckboxes');
       document.getElementById('serialNotes').value = '';
       document.getElementById('serialPhoto').value = '';
       document.getElementById('serialPhotoPreview').innerHTML = '';
+      document.getElementById('serialDate').value = new Date().toISOString().split('T')[0];
     } else {
       showMessage('serialMessage', '❌ ' + result.error, 'error');
     }
@@ -807,12 +851,17 @@ async function submitPetrol(e) {
     btn.textContent = 'Submit Petrol Entry';
     if (result.success) {
       showMessage('petrolMessage', '✅ ' + result.message, 'success');
+      // Fully reset the form for the next entry.
+      resetSearchDropdown('petrolCrewSearch', 'petrolCrew');
       document.getElementById('petrolOdometer').value = '';
       document.getElementById('petrolLiters').value = '';
       document.getElementById('petrolCostPerLitre').value = '';
       document.getElementById('petrolAmount').value = '';
+      document.getElementById('petrolPaymentMethod').value = 'Cash';
       document.getElementById('petrolReceipt').value = '';
       document.getElementById('petrolReceiptPreview').innerHTML = '';
+      document.getElementById('petrolEmail').value = '';
+      document.getElementById('petrolDate').value = new Date().toISOString().split('T')[0];
     } else {
       showMessage('petrolMessage', '❌ ' + result.error, 'error');
     }
@@ -857,13 +906,21 @@ async function submitPettyCash(e) {
     btn.textContent = 'Submit Petty Cash';
     if (result.success) {
       showMessage('pettyMessage', '✅ ' + result.message, 'success');
+      // Fully reset the form for the next entry.
+      document.getElementById('pettyCategory').value = '';
       document.getElementById('pettyDescription').value = '';
+      resetSearchDropdown('pettyProjectSearch', 'pettyProject');
       document.getElementById('pettyAmountExVAT').value = '';
       document.getElementById('pettyVAT').value = '';
       document.getElementById('pettyTotalAmount').value = '';
+      resetSearchDropdown('pettyPaidBySearch', 'pettyPaidBy');
+      document.getElementById('pettyPaymentMethod').value = 'Cash';
+      resetSearchDropdown('pettySupplierSearch', 'pettySupplier');
       document.getElementById('pettyNotes').value = '';
       document.getElementById('pettyReceipt').value = '';
       document.getElementById('pettyReceiptPreview').innerHTML = '';
+      document.getElementById('pettyEmail').value = '';
+      document.getElementById('pettyDate').value = new Date().toISOString().split('T')[0];
     } else {
       showMessage('pettyMessage', '❌ ' + result.error, 'error');
     }
