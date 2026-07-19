@@ -113,7 +113,8 @@ header p { font-size: 14px; opacity: 0.9; }
 
 /* Material row adjustments */
 .material-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 3fr 1fr 30px 30px;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
@@ -172,23 +173,12 @@ header p { font-size: 14px; opacity: 0.9; }
   background: #1557b0;
 }
 
-.material-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.material-row select,
-.material-row input {
-  padding: 8px 10px;
-  border: 2px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.material-row select:focus,
-.material-row input:focus {
-  border-color: #1a73e8;
-  outline: none;
+.material-row input { padding: 8px 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 13px; }
+.material-row .btn-add-small {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
 }
 
 .photo-preview {
@@ -250,14 +240,6 @@ header p { font-size: 14px; opacity: 0.9; }
 .message.success { display: block; background: #e6f4ea; color: #1e7e34; }
 .message.error { display: block; background: #fce8e6; color: #c62828; }
 .message.info { display: block; background: #e8f0fe; color: #1a73e8; }
-.material-row {
-  display: grid;
-  grid-template-columns: 3fr 1fr 30px;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.material-row input { padding: 8px 10px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 13px; }
 .material-row .remove-btn {
   background: #d93025;
   color: white;
@@ -281,23 +263,6 @@ header p { font-size: 14px; opacity: 0.9; }
   width: 100%;
   margin-top: 8px;
 }
-.crew-checkboxes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.crew-checkboxes label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: #f5f7fa;
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: normal;
-  font-size: 13px;
-}
-.crew-checkboxes input[type="checkbox"] { width: 16px; height: 16px; margin: 0; }
 @media (max-width: 600px) {
   .form-row { grid-template-columns: 1fr; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
