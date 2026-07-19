@@ -183,9 +183,15 @@ async function loadDropdowns() {
 function populateAllDropdowns(data) {
   // Helper to create a searchable label that includes the code, so users
   // can find a record by typing either its name or its code.
+  // Falls back to the record's name when it has no code (many customer/
+  // supplier rows in the sheet don't have one) - otherwise the submitted
+  // value would be an empty string and silently fail required-field
+  // validation, blocking submission with no visible reason why. The
+  // backend's UUID lookups already try code-then-name, so sending the
+  // name here is safe.
   const toOptions = (items, valueKey) =>
     items.map(item => ({
-      value: item[valueKey],
+      value: item[valueKey] || item.name,
       label: item.name + (item.code ? ' (' + item.code + ')' : '')
     }));
 
