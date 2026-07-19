@@ -38,7 +38,10 @@
           <div style="display:flex; gap:4px;">
             <div style="flex:1; position:relative;">
               <input type="text" id="dailyCustomerSearch" placeholder="Type to search customer..." class="search-input">
-              <select id="dailyCustomer" required style="display:none;"></select>
+              <!-- Not marked required: a required field that is display:none is not
+                   focusable, which makes browsers silently block form submission
+                   with no visible error. Validation for this field is done in JS. -->
+              <select id="dailyCustomer" style="display:none;"></select>
               <div id="dailyCustomerList" class="dropdown-list"></div>
             </div>
             <button type="button" class="btn-add-small" data-target-search="dailyCustomerSearch" data-target-hidden="dailyCustomer" onclick="openAddModal('customer', this)">+</button>
@@ -51,7 +54,7 @@
           <div style="display:flex; gap:4px;">
             <div style="flex:1; position:relative;">
               <input type="text" id="dailyProjectSearch" placeholder="Type to search project..." class="search-input">
-              <select id="dailyProject" required style="display:none;"></select>
+              <select id="dailyProject" style="display:none;"></select>
               <div id="dailyProjectList" class="dropdown-list"></div>
             </div>
             <button type="button" class="btn-add-small" data-target-search="dailyProjectSearch" data-target-hidden="dailyProject" onclick="openAddModal('project', this)">+</button>
@@ -153,7 +156,7 @@
             <div style="display:flex; gap:4px;">
               <div style="flex:1; position:relative;">
                 <input type="text" id="serialCustomerSearch" placeholder="Search customer..." class="search-input">
-                <select id="serialCustomer" required style="display:none;"></select>
+                <select id="serialCustomer" style="display:none;"></select>
                 <div id="serialCustomerList" class="dropdown-list"></div>
               </div>
               <button type="button" class="btn-add-small" data-target-search="serialCustomerSearch" data-target-hidden="serialCustomer" onclick="openAddModal('customer', this)">+</button>
@@ -164,7 +167,7 @@
             <div style="display:flex; gap:4px;">
               <div style="flex:1; position:relative;">
                 <input type="text" id="serialProjectSearch" placeholder="Search project..." class="search-input">
-                <select id="serialProject" required style="display:none;"></select>
+                <select id="serialProject" style="display:none;"></select>
                 <div id="serialProjectList" class="dropdown-list"></div>
               </div>
               <button type="button" class="btn-add-small" data-target-search="serialProjectSearch" data-target-hidden="serialProject" onclick="openAddModal('project', this)">+</button>
@@ -182,7 +185,7 @@
           <div style="display:flex; gap:4px;">
             <div style="flex:1; position:relative;">
               <input type="text" id="serialItemSearch" placeholder="Search inventory..." class="search-input">
-              <select id="serialItem" required style="display:none;"></select>
+              <select id="serialItem" style="display:none;"></select>
               <div id="serialItemList" class="dropdown-list"></div>
             </div>
             <button type="button" class="btn-add-small" data-target-search="serialItemSearch" data-target-hidden="serialItem" onclick="openAddModal('inventory', this)">+</button>
@@ -194,22 +197,17 @@
           <input type="text" id="serialNumber" placeholder="Enter serial" required>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label>Quantity</label>
-            <input type="number" id="serialQty" value="1" min="0" step="1">
-          </div>
-          <div class="form-group">
-            <label>Crew On Site</label>
-            <div style="display:flex; gap:4px;">
-              <div style="flex:1; position:relative;">
-                <input type="text" id="serialCrewSearch" placeholder="Search crew..." class="search-input">
-                <select id="serialCrew" style="display:none;"></select>
-                <div id="serialCrewList" class="dropdown-list"></div>
-              </div>
-              <button type="button" class="btn-add-small" data-target-search="serialCrewSearch" data-target-hidden="serialCrew" onclick="openAddModal('crew', this)">+</button>
-            </div>
-          </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <input type="number" id="serialQty" value="1" min="0" step="1">
+        </div>
+
+        <!-- Crew On Site (multiple staff, same searchable-checkbox pattern as Who Worked?) -->
+        <div class="form-group">
+          <label>Crew On Site</label>
+          <input type="text" id="serialCrewFilterSearch" placeholder="Search crew..." class="search-input">
+          <div class="crew-checkboxes" id="serialCrewCheckboxes"></div>
+          <button type="button" class="btn-add-small" data-target-type="checkbox" data-target-search="serialCrewCheckboxes" onclick="openAddModal('crew', this)">+ Add Crew Member</button>
         </div>
 
         <div class="form-group">
@@ -246,7 +244,7 @@
           <div style="display:flex; gap:4px;">
             <div style="flex:1; position:relative;">
               <input type="text" id="petrolCrewSearch" placeholder="Search crew..." class="search-input">
-              <select id="petrolCrew" required style="display:none;"></select>
+              <select id="petrolCrew" style="display:none;"></select>
               <div id="petrolCrewList" class="dropdown-list"></div>
             </div>
             <button type="button" class="btn-add-small" data-target-search="petrolCrewSearch" data-target-hidden="petrolCrew" onclick="openAddModal('crew', this)">+</button>
