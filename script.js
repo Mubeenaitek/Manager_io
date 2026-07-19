@@ -245,11 +245,15 @@ function populateCrewCheckboxes(crew) {
 
 function populateMaterialRows(inventory) {
   const rows = document.querySelectorAll('.material-row');
-  rows.forEach(row => {
+  rows.forEach((row, idx) => {
     const searchInput = row.querySelector('.material-search');
     const listDiv = row.querySelector('.material-list');
     const hiddenSelect = row.querySelector('.material-item-select');
     if (searchInput && listDiv) {
+      // The static first row in index.html previously had no id on its
+      // dropdown-list div, so renderDropdownList('', ...) was a no-op and
+      // search results never rendered. Guarantee an id here defensively.
+      if (!listDiv.id) listDiv.id = 'matList_static_' + idx;
       const opts = inventory.map(item => ({ value: item.code, label: item.name + (item.code ? ' (' + item.code + ')' : '') }));
       // Store options on the search input
       searchInput.dataset.options = JSON.stringify(opts);
@@ -305,6 +309,7 @@ function addMaterialRow() {
       <div class="material-list dropdown-list" id="${listId}"></div>
     </div>
     <input type="number" class="material-qty" placeholder="Qty" min="0" step="1" style="flex:1;">
+    <button type="button" class="btn-add-small" onclick="openAddModal('inventory', this)">+</button>
     <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
   `;
   container.appendChild(div);
@@ -482,11 +487,98 @@ const ADD_MODAL_CONFIG = {
   }
 };
 let currentAddType = null;
+let currentAddTargets = null;
 
-function openAddModal(type) {
+/**
+ * Figure out which field the "+" button that opened the modal belongs to,
+ * so that once the new record is created we can drop it straight into that
+ * field instead of making the user search for it again.
+ *
+ * - Fixed fields carry data-target-search / data-target-hidden attributes.
+ * - The Daily tab's crew "+ Add Crew Member" button carries
+ *   data-target-type="checkbox" and points at the checkbox container.
+ * - Material row "+" buttons (for adding inventory items) have neither -
+ *   they're resolved by walking up to the enclosing .material-row.
+ */
+function resolveAddTargets(sourceEl) {
+  if (!sourceEl) return null;
+
+  if (sourceEl.dataset && sourceEl.dataset.targetType === 'checkbox') {
+    return { kind: 'checkbox', containerId: sourceEl.dataset.targetSearch };
+  }
+
+  if (sourceEl.dataset && sourceEl.dataset.targetSearch) {
+    return {
+      kind: 'search',
+      searchInput: document.getElementById(sourceEl.dataset.targetSearch),
+      hiddenSelect: sourceEl.dataset.targetHidden ? document.getElementById(sourceEl.dataset.targetHidden) : null
+    };
+  }
+
+  const row = sourceEl.closest ? sourceEl.closest('.material-row') : null;
+  if (row) {
+    return {
+      kind: 'search',
+      searchInput: row.querySelector('.material-search'),
+      hiddenSelect: row.querySelector('.material-item-select')
+    };
+  }
+
+  return null;
+}
+
+/**
+ * After a successful add + dropdown refresh, locate the freshly created
+ * record in the reloaded data and select it into whichever field triggered
+ * the modal (or check its checkbox, for crew added from the Daily tab).
+ */
+function selectNewlyAddedRecord(type, submittedData) {
+  if (!currentAddTargets || !dropdownData) return;
+
+  let list = [];
+  if (type === 'customer') list = dropdownData.customers || [];
+  else if (type === 'project') list = dropdownData.projects || [];
+  else if (type === 'inventory') list = dropdownData.inventory || [];
+  else if (type === 'crew') list = dropdownData.crew || [];
+  else if (type === 'supplier') list = dropdownData.suppliers || [];
+
+  const record = list.find(r => r.name === submittedData.name);
+  if (!record) return;
+
+  if (currentAddTargets.kind === 'checkbox') {
+    const container = document.getElementById(currentAddTargets.containerId);
+    if (!container) return;
+    const cb = Array.from(container.querySelectorAll('.crew-checkbox')).find(c => c.value === record.name);
+    if (cb) cb.checked = true;
+    return;
+  }
+
+  const { searchInput, hiddenSelect } = currentAddTargets;
+  if (!searchInput) return;
+
+  let value, label;
+  if (type === 'project') {
+    value = record.name;
+    label = record.name;
+  } else if (type === 'crew') {
+    value = record.name;
+    label = record.name + (record.role ? ' - ' + record.role : '');
+  } else {
+    // customer / supplier / inventory all carry a code alongside the name
+    value = record.code || record.name;
+    label = record.name + (record.code ? ' (' + record.code + ')' : '');
+  }
+
+  searchInput.value = label;
+  if (hiddenSelect) hiddenSelect.value = value;
+  searchInput.dispatchEvent(new Event('change'));
+}
+
+function openAddModal(type, sourceEl) {
   const cfg = ADD_MODAL_CONFIG[type];
   if (!cfg) return;
   currentAddType = type;
+  currentAddTargets = resolveAddTargets(sourceEl);
 
   document.getElementById('modalTitle').textContent = cfg.title;
   const container = document.getElementById('modalFields');
@@ -509,6 +601,7 @@ function openAddModal(type) {
 function closeAddModal() {
   document.getElementById('addModal').style.display = 'none';
   currentAddType = null;
+  currentAddTargets = null;
 }
 
 function showModalMessage(text, type = 'info') {
@@ -542,6 +635,7 @@ async function handleAddFormSubmit(e) {
     if (result.success) {
       showModalMessage('✅ Added successfully', 'success');
       await loadDropdowns();
+      selectNewlyAddedRecord(currentAddType, data);
       setTimeout(closeAddModal, 800);
     } else {
       showModalMessage('❌ ' + result.error, 'error');
