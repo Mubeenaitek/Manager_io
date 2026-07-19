@@ -41,7 +41,7 @@
               <select id="dailyCustomer" required style="display:none;"></select>
               <div id="dailyCustomerList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('customer')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="dailyCustomerSearch" data-target-hidden="dailyCustomer" onclick="openAddModal('customer', this)">+</button>
           </div>
         </div>
 
@@ -54,7 +54,7 @@
               <select id="dailyProject" required style="display:none;"></select>
               <div id="dailyProjectList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="dailyProjectSearch" data-target-hidden="dailyProject" onclick="openAddModal('project', this)">+</button>
           </div>
         </div>
 
@@ -85,9 +85,10 @@
               <div style="flex:3; position:relative;">
                 <input type="text" class="material-search" placeholder="Search item..." style="width:100%;">
                 <select class="material-item-select" style="display:none;"></select>
-                <div class="material-list dropdown-list"></div>
+                <div class="material-list dropdown-list" id="matList_0"></div>
               </div>
               <input type="number" class="material-qty" placeholder="Qty" min="0" step="1" style="flex:1;">
+              <button type="button" class="btn-add-small" onclick="openAddModal('inventory', this)">+</button>
               <button type="button" class="remove-btn" onclick="removeMaterial(this)">×</button>
             </div>
           </div>
@@ -99,7 +100,7 @@
           <label>Who Worked? <span class="required">*</span></label>
           <input type="text" id="crewSearch" placeholder="Search crew..." class="search-input">
           <div class="crew-checkboxes" id="crewCheckboxes"></div>
-          <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+ Add Crew Member</button>
+          <button type="button" class="btn-add-small" data-target-type="checkbox" data-target-search="crewCheckboxes" onclick="openAddModal('crew', this)">+ Add Crew Member</button>
         </div>
 
         <div class="form-row">
@@ -155,7 +156,7 @@
                 <select id="serialCustomer" required style="display:none;"></select>
                 <div id="serialCustomerList" class="dropdown-list"></div>
               </div>
-              <button type="button" class="btn-add-small" onclick="openAddModal('customer')">+</button>
+              <button type="button" class="btn-add-small" data-target-search="serialCustomerSearch" data-target-hidden="serialCustomer" onclick="openAddModal('customer', this)">+</button>
             </div>
           </div>
           <div class="form-group">
@@ -166,7 +167,7 @@
                 <select id="serialProject" required style="display:none;"></select>
                 <div id="serialProjectList" class="dropdown-list"></div>
               </div>
-              <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
+              <button type="button" class="btn-add-small" data-target-search="serialProjectSearch" data-target-hidden="serialProject" onclick="openAddModal('project', this)">+</button>
             </div>
           </div>
         </div>
@@ -184,7 +185,7 @@
               <select id="serialItem" required style="display:none;"></select>
               <div id="serialItemList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('inventory')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="serialItemSearch" data-target-hidden="serialItem" onclick="openAddModal('inventory', this)">+</button>
           </div>
         </div>
 
@@ -206,7 +207,7 @@
                 <select id="serialCrew" style="display:none;"></select>
                 <div id="serialCrewList" class="dropdown-list"></div>
               </div>
-              <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
+              <button type="button" class="btn-add-small" data-target-search="serialCrewSearch" data-target-hidden="serialCrew" onclick="openAddModal('crew', this)">+</button>
             </div>
           </div>
         </div>
@@ -248,7 +249,7 @@
               <select id="petrolCrew" required style="display:none;"></select>
               <div id="petrolCrewList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="petrolCrewSearch" data-target-hidden="petrolCrew" onclick="openAddModal('crew', this)">+</button>
           </div>
         </div>
 
@@ -342,7 +343,7 @@
               <select id="pettyProject" style="display:none;"></select>
               <div id="pettyProjectList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('project')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="pettyProjectSearch" data-target-hidden="pettyProject" onclick="openAddModal('project', this)">+</button>
           </div>
         </div>
 
@@ -371,7 +372,7 @@
                 <select id="pettyPaidBy" style="display:none;"></select>
                 <div id="pettyPaidByList" class="dropdown-list"></div>
               </div>
-              <button type="button" class="btn-add-small" onclick="openAddModal('crew')">+</button>
+              <button type="button" class="btn-add-small" data-target-search="pettyPaidBySearch" data-target-hidden="pettyPaidBy" onclick="openAddModal('crew', this)">+</button>
             </div>
           </div>
           <div class="form-group">
@@ -392,7 +393,7 @@
               <select id="pettySupplier" style="display:none;"></select>
               <div id="pettySupplierList" class="dropdown-list"></div>
             </div>
-            <button type="button" class="btn-add-small" onclick="openAddModal('supplier')">+</button>
+            <button type="button" class="btn-add-small" data-target-search="pettySupplierSearch" data-target-hidden="pettySupplier" onclick="openAddModal('supplier', this)">+</button>
           </div>
         </div>
 
