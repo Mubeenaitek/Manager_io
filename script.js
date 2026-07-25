@@ -432,7 +432,7 @@ function fileToBase64(file) {
   });
 }
 
-async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
+async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId, extractType = null, statusElId = null) {
   const files = Array.from(fileInput.files || []);
   if (files.length === 0) return;
 
@@ -462,6 +462,11 @@ async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
         urls.push(result.fileUrl);
         hiddenField.value = urls.join(',');
         img.style.opacity = '1';
+        // AI auto-extract is only wired for single-file receipt inputs
+        // (Petrol/Petty Cash), never for the multi-photo Daily tab.
+        if (extractType && !fileInput.multiple) {
+          extractReceiptAndFill(base64, extractType, statusElId);
+        }
       } else {
         img.style.opacity = '1';
         img.style.border = '2px solid #d93025';
@@ -475,6 +480,70 @@ async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId) {
   }
 
   fileInput.value = '';
+}
+
+// ======================================================
+// AI RECEIPT EXTRACTION (Qwen VL, via Code.gs 'extractReceipt')
+// ======================================================
+/**
+ * Sends a receipt photo (already-uploaded base64) to the backend for
+ * AI extraction, then auto-fills the relevant form fields for the user
+ * to review before submitting. Never auto-submits the form.
+ */
+async function extractReceiptAndFill(base64, type, statusElId) {
+  if (statusElId) showMessage(statusElId, '🔎 Reading receipt...', 'info');
+  try {
+    const result = await callAPI('extractReceipt', { method: 'POST', body: { base64, type } });
+    if (!result.success) {
+      if (statusElId) showMessage(statusElId, '⚠️ Could not auto-read receipt: ' + result.error, 'error');
+      return;
+    }
+    const d = result.data || {};
+
+    if (type === 'petrol') {
+      if (d.date) document.getElementById('petrolDate').value = d.date;
+      if (d.liters !== null && d.liters !== undefined) document.getElementById('petrolLiters').value = d.liters;
+      if (d.totalAmount !== null && d.totalAmount !== undefined) document.getElementById('petrolAmount').value = d.totalAmount;
+      if (typeof calcPetrolTotal === 'function') calcPetrolTotal();
+      if (statusElId) showMessage(statusElId, '✅ Auto-filled from receipt — please review before submitting', 'success');
+    } else if (type === 'pettyCash') {
+      if (d.date) document.getElementById('pettyDate').value = d.date;
+      if (d.category) {
+        const catSelect = document.getElementById('pettyCategory');
+        const match = Array.from(catSelect.options).find(o => o.value === d.category);
+        if (match) catSelect.value = d.category;
+      }
+      if (d.description) document.getElementById('pettyDescription').value = d.description;
+      if (d.amountExcludingVAT !== null && d.amountExcludingVAT !== undefined) document.getElementById('pettyAmountExVAT').value = d.amountExcludingVAT;
+      if (d.vatAmount !== null && d.vatAmount !== undefined) document.getElementById('pettyVAT').value = d.vatAmount;
+      if (d.totalAmount !== null && d.totalAmount !== undefined) document.getElementById('pettyTotalAmount').value = d.totalAmount;
+      if (typeof calcPettyTotal === 'function') calcPettyTotal();
+
+      // Best-effort match of the extracted supplier name against the
+      // existing Suppliers dropdown; falls back to just filling the text
+      // (unmatched, so the hidden select stays empty and the user can
+      // pick the right one or add it via the + button).
+      if (d.supplier) {
+        const input = document.getElementById('pettySupplierSearch');
+        const opts = JSON.parse(input.dataset.options || '[]');
+        const lower = d.supplier.toLowerCase().trim();
+        const match = opts.find(o => {
+          const name = o.label.split(' (')[0].toLowerCase().trim();
+          return name === lower || name.includes(lower) || lower.includes(name);
+        });
+        if (match) {
+          input.value = match.label;
+          document.getElementById('pettySupplier').value = match.value;
+        } else {
+          input.value = d.supplier;
+          document.getElementById('pettySupplier').value = '';
+        }
+      }
+      if (statusElId) showMessage(statusElId, '✅ Auto-filled from receipt — please review before submitting', 'success');
+    }
+  } catch (err) {
+    if (statusElId) showMessage(statusElId, '⚠️ Auto-read failed: ' + err.message, 'error');
+  }
 }
 
 // ======================================================
@@ -866,6 +935,7 @@ async function submitPetrol(e) {
       document.getElementById('petrolPaymentMethod').value = 'Cash';
       document.getElementById('petrolReceipt').value = '';
       document.getElementById('petrolReceiptPreview').innerHTML = '';
+      clearMessage('petrolExtractStatus');
       document.getElementById('petrolEmail').value = '';
       document.getElementById('petrolDate').value = new Date().toISOString().split('T')[0];
     } else {
@@ -925,6 +995,7 @@ async function submitPettyCash(e) {
       document.getElementById('pettyNotes').value = '';
       document.getElementById('pettyReceipt').value = '';
       document.getElementById('pettyReceiptPreview').innerHTML = '';
+      clearMessage('pettyExtractStatus');
       document.getElementById('pettyEmail').value = '';
       document.getElementById('pettyDate').value = new Date().toISOString().split('T')[0];
     } else {
@@ -1040,10 +1111,10 @@ document.addEventListener('DOMContentLoaded', function() {
     handlePhotoUpload(this, 'serialPhoto', 'serialPhotoPreview');
   });
   document.getElementById('petrolReceiptInput').addEventListener('change', function() {
-    handlePhotoUpload(this, 'petrolReceipt', 'petrolReceiptPreview');
+    handlePhotoUpload(this, 'petrolReceipt', 'petrolReceiptPreview', 'petrol', 'petrolExtractStatus');
   });
   document.getElementById('pettyReceiptInput').addEventListener('change', function() {
-    handlePhotoUpload(this, 'pettyReceipt', 'pettyReceiptPreview');
+    handlePhotoUpload(this, 'pettyReceipt', 'pettyReceiptPreview', 'pettyCash', 'pettyExtractStatus');
   });
 
   // Auto-calc
