@@ -255,6 +255,18 @@
         </div>
 
         <div class="form-group">
+          <label>Car <span class="required">*</span></label>
+          <div style="display:flex; gap:4px;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="petrolCarSearch" placeholder="Search car..." class="search-input">
+              <select id="petrolCar" style="display:none;"></select>
+              <div id="petrolCarList" class="dropdown-list"></div>
+            </div>
+            <button type="button" class="btn-add-small" data-target-search="petrolCarSearch" data-target-hidden="petrolCar" onclick="openAddModal('car', this)">+</button>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label>Date <span class="required">*</span></label>
           <input type="date" id="petrolDate" required>
         </div>
@@ -328,8 +340,26 @@
             <option value="Parking/Tolls">Parking/Tolls</option>
             <option value="Food/Water - Team">Food/Water - Team</option>
             <option value="Communication">Communication</option>
+            <option value="Car Maintenance">Car Maintenance</option>
             <option value="Other">Other</option>
           </select>
+        </div>
+
+        <div class="form-group" id="pettyCarGroup" style="display:none;">
+          <label>Car <span class="required">*</span></label>
+          <div style="display:flex; gap:4px;">
+            <div style="flex:1; position:relative;">
+              <input type="text" id="pettyCarSearch" placeholder="Search car..." class="search-input">
+              <select id="pettyCar" style="display:none;"></select>
+              <div id="pettyCarList" class="dropdown-list"></div>
+            </div>
+            <button type="button" class="btn-add-small" data-target-search="pettyCarSearch" data-target-hidden="pettyCar" onclick="openAddModal('car', this)">+</button>
+          </div>
+        </div>
+
+        <div class="form-group" id="pettyOdometerGroup" style="display:none;">
+          <label>Odometer (km)</label>
+          <input type="number" id="pettyOdometer" min="0">
         </div>
 
         <div class="form-group">
@@ -467,6 +497,6 @@
   <!-- Cache-busting query param: bump this whenever script.js changes so
        browsers that cached an old copy pick up the new version immediately
        instead of silently running stale code. -->
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=4"></script>
 </body>
 </html>
