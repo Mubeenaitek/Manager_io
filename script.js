@@ -276,9 +276,9 @@ function populateAllDropdowns(data) {
   // triggered by an unrelated "+ Add" modal mid-form), silently re-apply
   // their active Customer -> Project filter without touching any project
   // they'd already picked.
-  const dailyCustomerVal = document.getElementById('dailyCustomer') ? document.getElementById('dailyCustomer').value : '';
+  const dailyCustomerVal = document.getElementById('dailyCustomerSearch') ? getSearchDropdownValue('dailyCustomerSearch', 'dailyCustomer') : '';
   if (dailyCustomerVal) applyCustomerProjectFilter(dailyCustomerVal, 'dailyProjectSearch', 'dailyProjectList');
-  const serialCustomerVal = document.getElementById('serialCustomer') ? document.getElementById('serialCustomer').value : '';
+  const serialCustomerVal = document.getElementById('serialCustomerSearch') ? getSearchDropdownValue('serialCustomerSearch', 'serialCustomer') : '';
   if (serialCustomerVal) applyCustomerProjectFilter(serialCustomerVal, 'serialProjectSearch', 'serialProjectList');
 
   // --- Inventory (for serial item) ---
@@ -1276,11 +1276,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // Reports or Serial Entries tab, narrow the Project dropdown down to just
   // that customer's projects (see filterProjectDropdownByCustomerCode).
   document.getElementById('dailyCustomerSearch').addEventListener('change', function() {
-    const code = document.getElementById('dailyCustomer').value;
+    const code = getSearchDropdownValue('dailyCustomerSearch', 'dailyCustomer');
     filterProjectDropdownByCustomerCode(code, 'dailyProjectSearch', 'dailyProjectList', 'dailyProject');
   });
   document.getElementById('serialCustomerSearch').addEventListener('change', function() {
-    const code = document.getElementById('serialCustomer').value;
+    const code = getSearchDropdownValue('serialCustomerSearch', 'serialCustomer');
     filterProjectDropdownByCustomerCode(code, 'serialProjectSearch', 'serialProjectList', 'serialProject');
   });
 
