@@ -162,6 +162,70 @@ function resetSearchDropdown(searchInputId, hiddenSelectId = null) {
   }
 }
 
+/**
+ * Update a searchable dropdown's option pool without re-binding its
+ * focus/blur/input/click listeners (populateSearchDropdown does that, and
+ * calling it repeatedly - e.g. on every customer selection - would stack up
+ * duplicate listeners over a session). The existing listeners already read
+ * options fresh from input.dataset.options on every interaction, so just
+ * refreshing that attribute (and the currently visible list) is enough.
+ */
+function setDropdownOptions(searchInputId, listId, options) {
+  const input = document.getElementById(searchInputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+  input.dataset.options = JSON.stringify(options);
+  renderDropdownList(listId, options);
+}
+
+// ======================================================
+// CUSTOMER -> PROJECT FILTERING
+// ======================================================
+/**
+ * Project names in the sheet are prefixed with the owning customer's Code
+ * (e.g. "AMBF Hafeera Factory...", "ABBK- Video Monitoring...", "GTMK CCTV
+ * POWER ISSUE"), so matching the selected customer's code against that
+ * prefix filters the Project dropdown down to just their projects - no
+ * backend or sheet changes needed. The next character after the code must
+ * be blank, a space, or a dash (not another letter/digit), so a code like
+ * "AMBF" doesn't also match a different customer's "AMBF_F..." projects.
+ */
+function projectBelongsToCustomerCode(label, code) {
+  if (!code) return true;
+  const upperLabel = label.trim().toUpperCase();
+  const upperCode = code.trim().toUpperCase();
+  if (!upperLabel.startsWith(upperCode)) return false;
+  const nextChar = upperLabel.charAt(upperCode.length);
+  return nextChar === '' || nextChar === ' ' || nextChar === '-';
+}
+
+/**
+ * Recomputes the filtered project list for a customer code and applies it,
+ * WITHOUT touching whatever project value is currently selected. Used to
+ * silently re-apply an already-active filter after a background dropdown
+ * refresh (e.g. triggered by an unrelated "+ Add" modal elsewhere on the
+ * form) so it doesn't wipe out a project the user already picked.
+ */
+function applyCustomerProjectFilter(code, searchInputId, listId) {
+  const all = window._allProjectOptions || [];
+  let filtered = code ? all.filter(opt => projectBelongsToCustomerCode(opt.label, code)) : all;
+  // Never leave the user with zero options - if nothing matches (a project
+  // that doesn't follow the naming convention, or a customer with no code),
+  // fall back to showing every project instead of blocking them.
+  if (filtered.length === 0) filtered = all;
+  setDropdownOptions(searchInputId, listId, filtered);
+}
+
+/**
+ * Called when the customer selection actually changes. The previously
+ * selected project may not belong to the new customer, so it's cleared
+ * before the filtered list is applied.
+ */
+function filterProjectDropdownByCustomerCode(code, searchInputId, listId, hiddenSelectId) {
+  resetSearchDropdown(searchInputId, hiddenSelectId);
+  applyCustomerProjectFilter(code, searchInputId, listId);
+}
+
 // ======================================================
 // LOAD DROPDOWNS
 // ======================================================
@@ -202,9 +266,20 @@ function populateAllDropdowns(data) {
 
   // --- Projects ---
   const projectOpts = data.projects.map(p => ({ value: p.name, label: p.name }));
+  window._allProjectOptions = projectOpts;
   populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
   populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
   populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
+
+  // The refresh above just reset the Project dropdowns back to every
+  // project. If a customer is still selected (e.g. this refresh was
+  // triggered by an unrelated "+ Add" modal mid-form), silently re-apply
+  // their active Customer -> Project filter without touching any project
+  // they'd already picked.
+  const dailyCustomerVal = document.getElementById('dailyCustomer') ? document.getElementById('dailyCustomer').value : '';
+  if (dailyCustomerVal) applyCustomerProjectFilter(dailyCustomerVal, 'dailyProjectSearch', 'dailyProjectList');
+  const serialCustomerVal = document.getElementById('serialCustomer') ? document.getElementById('serialCustomer').value : '';
+  if (serialCustomerVal) applyCustomerProjectFilter(serialCustomerVal, 'serialProjectSearch', 'serialProjectList');
 
   // --- Inventory (for serial item) ---
   const inventoryOpts = data.inventory.map(i => ({
@@ -874,6 +949,7 @@ async function submitDailyReport(e) {
       // Fully reset the form for the next entry.
       resetSearchDropdown('dailyCustomerSearch', 'dailyCustomer');
       resetSearchDropdown('dailyProjectSearch', 'dailyProject');
+      filterProjectDropdownByCustomerCode('', 'dailyProjectSearch', 'dailyProjectList', 'dailyProject');
       document.getElementById('dailyWorkType').value = '';
       document.getElementById('dailyDescription').value = '';
       document.getElementById('dailyIssues').value = '';
@@ -932,6 +1008,7 @@ async function submitSerialEntry(e) {
       // Fully reset the form for the next entry.
       resetSearchDropdown('serialCustomerSearch', 'serialCustomer');
       resetSearchDropdown('serialProjectSearch', 'serialProject');
+      filterProjectDropdownByCustomerCode('', 'serialProjectSearch', 'serialProjectList', 'serialProject');
       resetSearchDropdown('serialItemSearch', 'serialItem');
       document.getElementById('serialNumber').value = '';
       document.getElementById('serialQty').value = 1;
@@ -1194,6 +1271,18 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('petrolAmount').addEventListener('input', calcPetrolLitersFromAmount);
   document.getElementById('pettyAmountExVAT').addEventListener('input', calcPettyTotal);
   document.getElementById('pettyVAT').addEventListener('input', calcPettyTotal);
+
+  // Customer -> Project filtering: once a customer is picked on the Daily
+  // Reports or Serial Entries tab, narrow the Project dropdown down to just
+  // that customer's projects (see filterProjectDropdownByCustomerCode).
+  document.getElementById('dailyCustomerSearch').addEventListener('change', function() {
+    const code = document.getElementById('dailyCustomer').value;
+    filterProjectDropdownByCustomerCode(code, 'dailyProjectSearch', 'dailyProjectList', 'dailyProject');
+  });
+  document.getElementById('serialCustomerSearch').addEventListener('change', function() {
+    const code = document.getElementById('serialCustomer').value;
+    filterProjectDropdownByCustomerCode(code, 'serialProjectSearch', 'serialProjectList', 'serialProject');
+  });
 
   // Petty Cash: only show the Car / Odometer fields when "Car Maintenance"
   // is selected - every other category has no car to attach the expense to.
