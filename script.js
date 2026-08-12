@@ -233,6 +233,15 @@ function populateAllDropdowns(data) {
 
   // Also store inventory/customers for later use in dynamically added rows
   window._inventoryData = data.inventory;
+
+  // Bahrain fuel prices barely change for long stretches, so pre-fill
+  // Cost/Litre with whatever was used last instead of leaving it blank.
+  // Only fills it in if the field is currently empty, so it never
+  // clobbers a value the user is mid-way through typing/reviewing.
+  const costField = document.getElementById('petrolCostPerLitre');
+  if (costField && !costField.value && data.lastFuelCostPerLitre) {
+    costField.value = Number(data.lastFuelCostPerLitre).toFixed(3);
+  }
 }
 
 function populateCrewCheckboxes(crew, containerId = 'crewCheckboxes', searchInputId = 'crewSearch') {
@@ -555,7 +564,7 @@ const ADD_MODAL_CONFIG = {
     action: 'addCustomer',
     fields: [
       { id: 'name', label: 'Customer Name', type: 'text', required: true },
-      { id: 'code', label: 'Code (optional)', type: 'text', required: false }
+      { id: 'code', label: 'Code (optional - auto-generated if left blank)', type: 'text', required: false }
     ]
   },
   project: {
@@ -569,8 +578,8 @@ const ADD_MODAL_CONFIG = {
     title: 'Add Inventory Item',
     action: 'addInventoryItem',
     fields: [
-      { id: 'code', label: 'Item Code', type: 'text', required: true },
       { id: 'name', label: 'Item Name', type: 'text', required: true },
+      { id: 'code', label: 'Item Code (optional - auto-generated if left blank)', type: 'text', required: false },
       { id: 'unit', label: 'Unit (e.g. Nos)', type: 'text', required: false }
     ]
   },
@@ -588,7 +597,7 @@ const ADD_MODAL_CONFIG = {
     action: 'addSupplier',
     fields: [
       { id: 'name', label: 'Supplier Name', type: 'text', required: true },
-      { id: 'code', label: 'Code (optional)', type: 'text', required: false }
+      { id: 'code', label: 'Code (optional - auto-generated if left blank)', type: 'text', required: false }
     ]
   }
 };
@@ -739,7 +748,10 @@ async function handleAddFormSubmit(e) {
   try {
     const result = await callAPI(cfg.action, { method: 'POST', body: data });
     if (result.success) {
-      showModalMessage('✅ Added successfully', 'success');
+      // When the Code field was left blank, the backend auto-generates one -
+      // surface it so the user knows what got assigned.
+      const codeNote = result.code && !data.code ? (' — code: ' + result.code) : '';
+      showModalMessage('✅ Added successfully' + codeNote, 'success');
       await loadDropdowns();
       selectNewlyAddedRecord(currentAddType, data);
       setTimeout(closeAddModal, 800);
@@ -761,6 +773,19 @@ function calcPetrolTotal() {
   const cost = parseFloat(document.getElementById('petrolCostPerLitre').value) || 0;
   if (liters && cost) {
     document.getElementById('petrolAmount').value = (liters * cost).toFixed(3);
+  }
+}
+
+// Reverse of calcPetrolTotal: most refills are either a full tank or a
+// round BHD amount, so typing straight into Total Amount back-calculates
+// Liters from the current Cost/Litre. Setting .value here (rather than
+// dispatching an 'input' event) intentionally does NOT re-trigger
+// calcPetrolTotal, so there's no calculation feedback loop.
+function calcPetrolLitersFromAmount() {
+  const amount = parseFloat(document.getElementById('petrolAmount').value) || 0;
+  const cost = parseFloat(document.getElementById('petrolCostPerLitre').value) || 0;
+  if (amount && cost) {
+    document.getElementById('petrolLiters').value = (amount / cost).toFixed(3);
   }
 }
 
@@ -930,7 +955,9 @@ async function submitPetrol(e) {
       resetSearchDropdown('petrolCrewSearch', 'petrolCrew');
       document.getElementById('petrolOdometer').value = '';
       document.getElementById('petrolLiters').value = '';
-      document.getElementById('petrolCostPerLitre').value = '';
+      // Cost/Litre is intentionally NOT cleared here - it's "remembered"
+      // across entries since Bahrain fuel prices rarely change, so the
+      // next fill-up starts pre-filled with the price just used.
       document.getElementById('petrolAmount').value = '';
       document.getElementById('petrolPaymentMethod').value = 'Cash';
       document.getElementById('petrolReceipt').value = '';
@@ -1120,6 +1147,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Auto-calc
   document.getElementById('petrolLiters').addEventListener('input', calcPetrolTotal);
   document.getElementById('petrolCostPerLitre').addEventListener('input', calcPetrolTotal);
+  document.getElementById('petrolAmount').addEventListener('input', calcPetrolLitersFromAmount);
   document.getElementById('pettyAmountExVAT').addEventListener('input', calcPettyTotal);
   document.getElementById('pettyVAT').addEventListener('input', calcPettyTotal);
 });
