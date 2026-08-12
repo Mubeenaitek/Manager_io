@@ -222,6 +222,14 @@ function populateAllDropdowns(data) {
   const supplierOpts = toOptions(data.suppliers || [], 'code');
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
 
+  // --- Cars ---
+  const carOpts = (data.cars || []).map(c => ({
+    value: c.plateNo,
+    label: c.plateNo + (c.makeModel ? ' (' + c.makeModel + ')' : '')
+  }));
+  populateSearchDropdown('petrolCarSearch', 'petrolCarList', carOpts, 'petrolCar');
+  populateSearchDropdown('pettyCarSearch', 'pettyCarList', carOpts, 'pettyCar');
+
   // --- Crew Checkboxes (with search) ---
   // Daily tab's "Who Worked?" and Serial tab's "Crew On Site" both need to
   // support selecting multiple staff, so both use the same checkbox pattern.
@@ -520,7 +528,10 @@ async function extractReceiptAndFill(base64, type, statusElId) {
       if (d.category) {
         const catSelect = document.getElementById('pettyCategory');
         const match = Array.from(catSelect.options).find(o => o.value === d.category);
-        if (match) catSelect.value = d.category;
+        if (match) {
+          catSelect.value = d.category;
+          catSelect.dispatchEvent(new Event('change'));
+        }
       }
       if (d.description) document.getElementById('pettyDescription').value = d.description;
       if (d.amountExcludingVAT !== null && d.amountExcludingVAT !== undefined) document.getElementById('pettyAmountExVAT').value = d.amountExcludingVAT;
@@ -599,6 +610,17 @@ const ADD_MODAL_CONFIG = {
       { id: 'name', label: 'Supplier Name', type: 'text', required: true },
       { id: 'code', label: 'Code (optional - auto-generated if left blank)', type: 'text', required: false }
     ]
+  },
+  car: {
+    title: 'Add Car',
+    action: 'addCar',
+    fields: [
+      { id: 'plateNo', label: 'Plate No.', type: 'text', required: true },
+      { id: 'makeModel', label: 'Make/Model', type: 'text', required: false },
+      { id: 'assignedCrew', label: 'Assigned Crew', type: 'text', required: false },
+      { id: 'registrationExpiry', label: 'Registration Expiry', type: 'date', required: false },
+      { id: 'insuranceExpiry', label: 'Insurance Expiry', type: 'date', required: false }
+    ]
   }
 };
 let currentAddType = null;
@@ -656,8 +678,12 @@ function selectNewlyAddedRecord(type, submittedData) {
   else if (type === 'inventory') list = dropdownData.inventory || [];
   else if (type === 'crew') list = dropdownData.crew || [];
   else if (type === 'supplier') list = dropdownData.suppliers || [];
+  else if (type === 'car') list = dropdownData.cars || [];
 
-  const record = list.find(r => r.name === submittedData.name);
+  // Cars are keyed by plate number, not name - everything else uses name.
+  const record = type === 'car'
+    ? list.find(r => r.plateNo === submittedData.plateNo)
+    : list.find(r => r.name === submittedData.name);
   if (!record) return;
 
   if (currentAddTargets.kind === 'checkbox') {
@@ -678,6 +704,9 @@ function selectNewlyAddedRecord(type, submittedData) {
   } else if (type === 'crew') {
     value = record.name;
     label = record.name + (record.role ? ' - ' + record.role : '');
+  } else if (type === 'car') {
+    value = record.plateNo;
+    label = record.plateNo + (record.makeModel ? ' (' + record.makeModel + ')' : '');
   } else {
     // customer / supplier / inventory all carry a code alongside the name
     value = record.code || record.name;
@@ -927,6 +956,7 @@ async function submitPetrol(e) {
   const data = {
     action: 'submitPetrol',
     crewMember: getSearchDropdownValue('petrolCrewSearch', 'petrolCrew'),
+    car: getSearchDropdownValue('petrolCarSearch', 'petrolCar'),
     date: document.getElementById('petrolDate').value,
     odometer: document.getElementById('petrolOdometer').value,
     liters: document.getElementById('petrolLiters').value,
@@ -937,7 +967,7 @@ async function submitPetrol(e) {
     email: document.getElementById('petrolEmail').value
   };
 
-  if (!data.crewMember || !data.date || !data.totalAmount) {
+  if (!data.crewMember || !data.car || !data.date || !data.totalAmount) {
     showMessage('petrolMessage', 'Please fill all required fields', 'error');
     return;
   }
@@ -953,6 +983,7 @@ async function submitPetrol(e) {
       showMessage('petrolMessage', '✅ ' + result.message, 'success');
       // Fully reset the form for the next entry.
       resetSearchDropdown('petrolCrewSearch', 'petrolCrew');
+      resetSearchDropdown('petrolCarSearch', 'petrolCar');
       document.getElementById('petrolOdometer').value = '';
       document.getElementById('petrolLiters').value = '';
       // Cost/Litre is intentionally NOT cleared here - it's "remembered"
@@ -978,6 +1009,8 @@ async function submitPetrol(e) {
 async function submitPettyCash(e) {
   e.preventDefault();
   clearMessage('pettyMessage');
+  const isCarMaintenance = document.getElementById('pettyCategory').value === 'Car Maintenance';
+
   const data = {
     action: 'submitPettyCash',
     date: document.getElementById('pettyDate').value,
@@ -992,11 +1025,18 @@ async function submitPettyCash(e) {
     supplier: getSearchDropdownValue('pettySupplierSearch', 'pettySupplier'),
     receiptPhoto: document.getElementById('pettyReceipt').value,
     notes: document.getElementById('pettyNotes').value,
-    email: document.getElementById('pettyEmail').value
+    email: document.getElementById('pettyEmail').value,
+    car: isCarMaintenance ? getSearchDropdownValue('pettyCarSearch', 'pettyCar') : '',
+    odometer: isCarMaintenance ? document.getElementById('pettyOdometer').value : ''
   };
 
   if (!data.date || !data.category || !data.description || !data.totalAmount) {
     showMessage('pettyMessage', 'Please fill all required fields', 'error');
+    return;
+  }
+
+  if (isCarMaintenance && !data.car) {
+    showMessage('pettyMessage', 'Please select a car for Car Maintenance expenses', 'error');
     return;
   }
 
@@ -1019,6 +1059,10 @@ async function submitPettyCash(e) {
       resetSearchDropdown('pettyPaidBySearch', 'pettyPaidBy');
       document.getElementById('pettyPaymentMethod').value = 'Cash';
       resetSearchDropdown('pettySupplierSearch', 'pettySupplier');
+      resetSearchDropdown('pettyCarSearch', 'pettyCar');
+      document.getElementById('pettyOdometer').value = '';
+      document.getElementById('pettyCarGroup').style.display = 'none';
+      document.getElementById('pettyOdometerGroup').style.display = 'none';
       document.getElementById('pettyNotes').value = '';
       document.getElementById('pettyReceipt').value = '';
       document.getElementById('pettyReceiptPreview').innerHTML = '';
@@ -1150,4 +1194,16 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('petrolAmount').addEventListener('input', calcPetrolLitersFromAmount);
   document.getElementById('pettyAmountExVAT').addEventListener('input', calcPettyTotal);
   document.getElementById('pettyVAT').addEventListener('input', calcPettyTotal);
+
+  // Petty Cash: only show the Car / Odometer fields when "Car Maintenance"
+  // is selected - every other category has no car to attach the expense to.
+  document.getElementById('pettyCategory').addEventListener('change', function() {
+    const isCarMaintenance = this.value === 'Car Maintenance';
+    document.getElementById('pettyCarGroup').style.display = isCarMaintenance ? 'block' : 'none';
+    document.getElementById('pettyOdometerGroup').style.display = isCarMaintenance ? 'block' : 'none';
+    if (!isCarMaintenance) {
+      resetSearchDropdown('pettyCarSearch', 'pettyCar');
+      document.getElementById('pettyOdometer').value = '';
+    }
+  });
 });
