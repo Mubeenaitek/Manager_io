@@ -295,6 +295,7 @@ function populateAllDropdowns(data) {
 
   // --- Suppliers ---
   const supplierOpts = toOptions(data.suppliers || [], 'code');
+  window._allSuppliers = data.suppliers || [];
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
 
   // --- Cars ---
@@ -634,11 +635,39 @@ async function extractReceiptAndFill(base64, type, statusElId) {
           document.getElementById('pettySupplier').value = '';
         }
       }
+
+      // VAT number: prefer whatever's printed on the receipt itself. If the
+      // receipt didn't have one but we matched a known supplier above, fall
+      // back to that supplier's VAT number on file.
+      if (d.supplierVATNumber) {
+        document.getElementById('pettySupplierVAT').value = d.supplierVATNumber;
+      } else if (d.supplier) {
+        const matchedValue = document.getElementById('pettySupplier').value;
+        if (matchedValue) document.getElementById('pettySupplierVAT').value = findSupplierVAT(matchedValue);
+      }
       if (statusElId) showMessage(statusElId, '✅ Auto-filled from receipt — please review before submitting', 'success');
     }
   } catch (err) {
     if (statusElId) showMessage(statusElId, '⚠️ Auto-read failed: ' + err.message, 'error');
   }
+}
+
+// ======================================================
+// SUPPLIER VAT AUTOFILL
+// ======================================================
+/**
+ * Looks up a supplier's VAT registration number (from the Suppliers sheet)
+ * by the code/name value the supplier dropdown carries. Used to auto-fill
+ * the Petty Cash "Supplier VAT Number" field the moment a supplier is
+ * picked, so the user only has to type it manually for suppliers that
+ * don't have a VAT number on file yet (or aren't in the Suppliers sheet
+ * at all).
+ */
+function findSupplierVAT(value) {
+  if (!value) return '';
+  const list = window._allSuppliers || [];
+  const match = list.find(s => s.code === value || s.name === value);
+  return match ? (match.vat || '') : '';
 }
 
 // ======================================================
@@ -683,7 +712,8 @@ const ADD_MODAL_CONFIG = {
     action: 'addSupplier',
     fields: [
       { id: 'name', label: 'Supplier Name', type: 'text', required: true },
-      { id: 'code', label: 'Code (optional - auto-generated if left blank)', type: 'text', required: false }
+      { id: 'code', label: 'Code (optional - auto-generated if left blank)', type: 'text', required: false },
+      { id: 'vat', label: 'VAT Number (optional)', type: 'text', required: false }
     ]
   },
   car: {
@@ -791,6 +821,14 @@ function selectNewlyAddedRecord(type, submittedData) {
   searchInput.value = label;
   if (hiddenSelect) hiddenSelect.value = value;
   searchInput.dispatchEvent(new Event('change'));
+
+  // Newly-added suppliers carry whatever VAT number was typed into the
+  // modal straight onto the Petty Cash VAT field, same as picking an
+  // existing supplier does (see the pettySupplierSearch change listener).
+  if (type === 'supplier') {
+    const vatField = document.getElementById('pettySupplierVAT');
+    if (vatField) vatField.value = record.vat || '';
+  }
 }
 
 function openAddModal(type, sourceEl) {
@@ -1100,6 +1138,7 @@ async function submitPettyCash(e) {
     paidBy: getSearchDropdownValue('pettyPaidBySearch', 'pettyPaidBy'),
     paymentMethod: document.getElementById('pettyPaymentMethod').value,
     supplier: getSearchDropdownValue('pettySupplierSearch', 'pettySupplier'),
+    supplierVAT: document.getElementById('pettySupplierVAT').value,
     receiptPhoto: document.getElementById('pettyReceipt').value,
     notes: document.getElementById('pettyNotes').value,
     email: document.getElementById('pettyEmail').value,
@@ -1136,6 +1175,7 @@ async function submitPettyCash(e) {
       resetSearchDropdown('pettyPaidBySearch', 'pettyPaidBy');
       document.getElementById('pettyPaymentMethod').value = 'Cash';
       resetSearchDropdown('pettySupplierSearch', 'pettySupplier');
+      document.getElementById('pettySupplierVAT').value = '';
       resetSearchDropdown('pettyCarSearch', 'pettyCar');
       document.getElementById('pettyOdometer').value = '';
       document.getElementById('pettyCarGroup').style.display = 'none';
@@ -1282,6 +1322,14 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('serialCustomerSearch').addEventListener('change', function() {
     const code = getSearchDropdownValue('serialCustomerSearch', 'serialCustomer');
     filterProjectDropdownByCustomerCode(code, 'serialProjectSearch', 'serialProjectList', 'serialProject');
+  });
+
+  // Petty Cash: picking a supplier auto-fills its VAT number (if on file)
+  // into the VAT field below - still freely editable afterwards, e.g. for
+  // suppliers without a VAT number yet or a one-off correction.
+  document.getElementById('pettySupplierSearch').addEventListener('change', function() {
+    const value = getSearchDropdownValue('pettySupplierSearch', 'pettySupplier');
+    document.getElementById('pettySupplierVAT').value = findSupplierVAT(value);
   });
 
   // Petty Cash: only show the Car / Odometer fields when "Car Maintenance"
