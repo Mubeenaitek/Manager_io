@@ -133,7 +133,7 @@
 
         <div class="form-group">
           <label>Site Photos</label>
-          <input type="file" id="dailyPhotoInput" accept="image/*" capture="environment" multiple>
+          <input type="file" id="dailyPhotoInput" accept="image/*" multiple>
           <div id="dailyPhotoPreview" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
           <input type="hidden" id="dailyPhotos" value="">
         </div>
@@ -215,7 +215,7 @@
 
         <div class="form-group">
           <label>Photo</label>
-          <input type="file" id="serialPhotoInput" accept="image/*" capture="environment">
+          <input type="file" id="serialPhotoInput" accept="image/*">
           <div id="serialPhotoPreview"></div>
           <input type="hidden" id="serialPhoto" value="">
         </div>
@@ -304,7 +304,7 @@
 
         <div class="form-group">
           <label>Receipt</label>
-          <input type="file" id="petrolReceiptInput" accept="image/*" capture="environment">
+          <input type="file" id="petrolReceiptInput" accept="image/*">
           <div id="petrolReceiptPreview"></div>
           <input type="hidden" id="petrolReceipt" value="">
           <div id="petrolExtractStatus" class="message" style="display:none;"></div>
@@ -430,8 +430,13 @@
         </div>
 
         <div class="form-group">
+          <label>Supplier VAT Number</label>
+          <input type="text" id="pettySupplierVAT" placeholder="Auto-fills from supplier or receipt - editable">
+        </div>
+
+        <div class="form-group">
           <label>Receipt</label>
-          <input type="file" id="pettyReceiptInput" accept="image/*" capture="environment">
+          <input type="file" id="pettyReceiptInput" accept="image/*">
           <div id="pettyReceiptPreview"></div>
           <input type="hidden" id="pettyReceipt" value="">
           <div id="pettyExtractStatus" class="message" style="display:none;"></div>
@@ -460,7 +465,7 @@
       <p>Export active daily reports to Manager.io Billable Time format.</p>
       <button class="btn btn-success" onclick="generateBillableTime()">Generate CSV</button>
       <div id="exportMessage" class="message"></div>
-      <div id="exportResult" style="display:none; margin-top:16px; background:#e6f4ea; padding:16px; border-radius:8px;">
+      <div id="exportResult" style="display: none; margin-top:16px; background:#e6f4ea; padding:16px; border-radius:8px;">
         <p><strong>✅ CSV Generated</strong></p>
         <p>Records: <span id="exportCount">0</span></p>
         <a id="exportFileLink" href="#" target="_blank">📥 Download CSV</a>
@@ -497,6 +502,6 @@
   <!-- Cache-busting query param: bump this whenever script.js changes so
        browsers that cached an old copy pick up the new version immediately
        instead of silently running stale code. -->
-  <script src="script.js?v=5"></script>
+  <script src="script.js?v=6"></script>
 </body>
 </html>
