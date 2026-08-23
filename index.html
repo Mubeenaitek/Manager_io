@@ -465,7 +465,7 @@
       <p>Export active daily reports to Manager.io Billable Time format.</p>
       <button class="btn btn-success" onclick="generateBillableTime()">Generate CSV</button>
       <div id="exportMessage" class="message"></div>
-      <div id="exportResult" style="display: none; margin-top:16px; background:#e6f4ea; padding:16px; border-radius:8px;">
+      <div id="exportResult" style="display:none; margin-top:16px; background:#e6f4ea; padding:16px; border-radius:8px;">
         <p><strong>✅ CSV Generated</strong></p>
         <p>Records: <span id="exportCount">0</span></p>
         <a id="exportFileLink" href="#" target="_blank">📥 Download CSV</a>
@@ -479,6 +479,82 @@
       <h3>⚙️ Admin – Manage Dropdowns</h3>
       <p>Use the + buttons on each field to add new items. They will be added to the database and refresh automatically.</p>
       <p><button class="btn" onclick="loadDropdowns()">🔄 Refresh All Dropdowns</button></p>
+
+      <hr>
+
+      <h3>🤖 Ask Manager.io</h3>
+      <p>Optionally narrow down which entries to ask about, then type your question. Answers are based only on the matching Daily Reports / Petrol / Petty Cash entries.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>From Date</label>
+          <input type="date" id="chatDateFrom">
+        </div>
+        <div class="form-group">
+          <label>To Date</label>
+          <input type="date" id="chatDateTo">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Category</label>
+        <select id="chatCategory">
+          <option value="">Any</option>
+          <option value="Materials/Tools">Materials/Tools</option>
+          <option value="Consumables">Consumables</option>
+          <option value="Transport/Taxi">Transport/Taxi</option>
+          <option value="Parking/Tolls">Parking/Tolls</option>
+          <option value="Food/Water - Team">Food/Water - Team</option>
+          <option value="Communication">Communication</option>
+          <option value="Car Maintenance">Car Maintenance</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Project</label>
+        <div style="position:relative;">
+          <input type="text" id="chatProjectSearch" placeholder="Any project..." class="search-input">
+          <select id="chatProject" style="display:none;"></select>
+          <div id="chatProjectList" class="dropdown-list"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Supplier</label>
+        <div style="position:relative;">
+          <input type="text" id="chatSupplierSearch" placeholder="Any supplier..." class="search-input">
+          <select id="chatSupplier" style="display:none;"></select>
+          <div id="chatSupplierList" class="dropdown-list"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Customer</label>
+        <div style="position:relative;">
+          <input type="text" id="chatCustomerSearch" placeholder="Any customer..." class="search-input">
+          <select id="chatCustomer" style="display:none;"></select>
+          <div id="chatCustomerList" class="dropdown-list"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Car</label>
+        <div style="position:relative;">
+          <input type="text" id="chatCarSearch" placeholder="Any car..." class="search-input">
+          <select id="chatCar" style="display:none;"></select>
+          <div id="chatCarList" class="dropdown-list"></div>
+        </div>
+      </div>
+
+      <p><button type="button" class="btn" style="background:rgba(118,118,128,0.18); color:#1d1d1f; box-shadow:none;" onclick="clearChatFilters()">Clear Filters</button></p>
+
+      <div id="chatThread" style="max-height:400px; overflow-y:auto; margin:16px 0; display:flex; flex-direction:column; gap:10px;"></div>
+
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="chatQuestionInput" placeholder="Ask a question about these entries..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); askManagerChat();}">
+        <button type="button" class="btn" onclick="askManagerChat()">Ask</button>
+      </div>
     </section>
   </main>
 
@@ -502,6 +578,6 @@
   <!-- Cache-busting query param: bump this whenever script.js changes so
        browsers that cached an old copy pick up the new version immediately
        instead of silently running stale code. -->
-  <script src="script.js?v=6"></script>
+  <script src="script.js?v=7"></script>
 </body>
 </html>
