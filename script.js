@@ -1351,8 +1351,12 @@ document.addEventListener('DOMContentLoaded', function() {
   loadDropdowns();
 
   const today = new Date().toISOString().split('T')[0];
+  // The Ask Manager.io chat filters (chatDateFrom/chatDateTo) are meant to
+  // start EMPTY - they're optional filters, not data-entry fields, and
+  // pre-filling them to today would silently scope every fresh question to
+  // "today only" until the user noticed and cleared them.
   document.querySelectorAll('input[type="date"]').forEach(el => {
-    if (!el.value) el.value = today;
+    if (!el.value && el.id !== 'chatDateFrom' && el.id !== 'chatDateTo') el.value = today;
   });
 
   const startTimeEl = document.getElementById('dailyStartTime');
