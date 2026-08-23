@@ -263,6 +263,8 @@ function populateAllDropdowns(data) {
   const customerOpts = toOptions(data.customers, 'code');
   populateSearchDropdown('dailyCustomerSearch', 'dailyCustomerList', customerOpts, 'dailyCustomer');
   populateSearchDropdown('serialCustomerSearch', 'serialCustomerList', customerOpts, 'serialCustomer');
+  // Ask Manager.io chat filter - reuses the same options, no "+" add button.
+  populateSearchDropdown('chatCustomerSearch', 'chatCustomerList', customerOpts, 'chatCustomer');
 
   // --- Projects ---
   const projectOpts = data.projects.map(p => ({ value: p.name, label: p.name }));
@@ -270,6 +272,7 @@ function populateAllDropdowns(data) {
   populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
   populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
   populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
+  populateSearchDropdown('chatProjectSearch', 'chatProjectList', projectOpts, 'chatProject');
 
   // The refresh above just reset the Project dropdowns back to every
   // project. If a customer is still selected (e.g. this refresh was
@@ -297,6 +300,7 @@ function populateAllDropdowns(data) {
   const supplierOpts = toOptions(data.suppliers || [], 'code');
   window._allSuppliers = data.suppliers || [];
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
+  populateSearchDropdown('chatSupplierSearch', 'chatSupplierList', supplierOpts, 'chatSupplier');
 
   // --- Cars ---
   const carOpts = (data.cars || []).map(c => ({
@@ -305,6 +309,7 @@ function populateAllDropdowns(data) {
   }));
   populateSearchDropdown('petrolCarSearch', 'petrolCarList', carOpts, 'petrolCar');
   populateSearchDropdown('pettyCarSearch', 'pettyCarList', carOpts, 'pettyCar');
+  populateSearchDropdown('chatCarSearch', 'chatCarList', carOpts, 'chatCar');
 
   // --- Crew Checkboxes (with search) ---
   // Daily tab's "Who Worked?" and Serial tab's "Crew On Site" both need to
@@ -1254,6 +1259,88 @@ async function lookupSerial() {
     resultEl.textContent = '❌ ' + error.message;
     resultEl.className = 'message error';
     resultEl.style.display = 'block';
+  }
+}
+
+// ======================================================
+// ASK MANAGER.IO — AI DATA CHAT (Admin tab)
+// ======================================================
+// Filters are set via dropdowns BEFORE asking a question (smart pre-filter
+// approach) and stay "sticky" across follow-up questions in the same
+// session, so the user can ask several things about the same slice of data
+// without re-picking filters each time. chatHistory is capped at the last
+// 10 turns and sent to the backend so follow-ups like "and last month?"
+// have context.
+let chatHistory = [];
+
+function getChatFilters() {
+  return {
+    dateFrom: document.getElementById('chatDateFrom').value || '',
+    dateTo: document.getElementById('chatDateTo').value || '',
+    category: document.getElementById('chatCategory').value || '',
+    project: getSearchDropdownValue('chatProjectSearch', 'chatProject'),
+    supplier: getSearchDropdownValue('chatSupplierSearch', 'chatSupplier'),
+    customer: getSearchDropdownValue('chatCustomerSearch', 'chatCustomer'),
+    car: getSearchDropdownValue('chatCarSearch', 'chatCar')
+  };
+}
+
+function clearChatFilters() {
+  document.getElementById('chatDateFrom').value = '';
+  document.getElementById('chatDateTo').value = '';
+  document.getElementById('chatCategory').value = '';
+  resetSearchDropdown('chatProjectSearch', 'chatProject');
+  resetSearchDropdown('chatSupplierSearch', 'chatSupplier');
+  resetSearchDropdown('chatCustomerSearch', 'chatCustomer');
+  resetSearchDropdown('chatCarSearch', 'chatCar');
+}
+
+function appendChatBubble(role, text) {
+  const thread = document.getElementById('chatThread');
+  if (!thread) return null;
+  const bubble = document.createElement('div');
+  const isUser = role === 'user';
+  bubble.style.maxWidth = '85%';
+  bubble.style.padding = '10px 14px';
+  bubble.style.borderRadius = '14px';
+  bubble.style.whiteSpace = 'pre-wrap';
+  bubble.style.lineHeight = '1.4';
+  bubble.style.alignSelf = isUser ? 'flex-end' : 'flex-start';
+  bubble.style.background = isUser ? 'rgba(0,113,227,0.12)' : 'rgba(118,118,128,0.12)';
+  bubble.style.color = '#1d1d1f';
+  bubble.textContent = text;
+  thread.appendChild(bubble);
+  thread.scrollTop = thread.scrollHeight;
+  return bubble;
+}
+
+async function askManagerChat() {
+  const input = document.getElementById('chatQuestionInput');
+  const question = input.value.trim();
+  if (!question) return;
+
+  appendChatBubble('user', question);
+  input.value = '';
+  input.disabled = true;
+  const thinkingBubble = appendChatBubble('assistant', '🤔 Thinking...');
+
+  const filters = getChatFilters();
+
+  try {
+    const result = await callAPI('chatWithData', { method: 'POST', body: { question, filters, history: chatHistory } });
+    if (result.success) {
+      thinkingBubble.textContent = result.answer;
+      chatHistory.push({ role: 'user', text: question });
+      chatHistory.push({ role: 'assistant', text: result.answer });
+      if (chatHistory.length > 10) chatHistory = chatHistory.slice(-10);
+    } else {
+      thinkingBubble.textContent = '❌ ' + result.error;
+    }
+  } catch (err) {
+    thinkingBubble.textContent = '❌ Error: ' + err.message;
+  } finally {
+    input.disabled = false;
+    input.focus();
   }
 }
 
