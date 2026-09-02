@@ -365,3 +365,116 @@ hr { border: none; border-top: 1px solid rgba(60,60,67,0.15); margin: 20px 0; }
   .tab-content { padding: 16px; border-radius: 16px; }
   header { padding: 12px 16px 16px; }
 }
+/* ---------- Project Tasks (technician scope checklist) ---------- */
+.task-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #6e6e73;
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: rgba(118,118,128,0.08);
+  border-radius: 10px;
+}
+.task-breadcrumb .crumb-link {
+  cursor: pointer;
+  color: #0071e3;
+  transition: opacity .15s ease;
+}
+.task-breadcrumb .crumb-link:last-child {
+  color: #1d1d1f;
+  cursor: default;
+}
+.task-breadcrumb .crumb-link:hover { opacity: 0.7; }
+.task-breadcrumb .crumb-sep { color: #b0b0b5; }
+
+.task-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(60,60,67,0.1);
+  border-radius: 12px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.task-card:hover {
+  background: rgba(0,113,227,0.06);
+  border-color: rgba(0,113,227,0.25);
+  transform: translateY(-1px);
+}
+.task-card:active { transform: scale(0.98); }
+.task-card.task-card-complete { opacity: 0.72; }
+.task-card-main { min-width: 0; }
+.task-card-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #1d1d1f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-card-sub {
+  font-size: 12px;
+  color: #8e8e93;
+  margin-top: 2px;
+}
+
+.task-status-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.task-status-notstarted { background: rgba(118,118,128,0.14); color: #6e6e73; }
+.task-status-inprogress  { background: rgba(0,113,227,0.14);  color: #0071e3; }
+.task-status-onhold      { background: rgba(255,149,0,0.16);  color: #c76b00; }
+.task-status-completed   { background: rgba(52,199,89,0.16);  color: #1f8838; }
+
+.task-leaf {
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(60,60,67,0.1);
+  border-radius: 14px;
+  padding: 18px;
+}
+.task-leaf-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1d1d1f;
+  margin-bottom: 6px;
+}
+.task-status-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.task-status-btn {
+  padding: 11px 8px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  background: rgba(118,118,128,0.1);
+  color: #3a3a3c;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.task-status-btn:hover { background: rgba(118,118,128,0.18); }
+.task-status-btn:active { transform: scale(0.96); }
+.task-status-btn.task-status-notstarted.active { background: #6e6e73; color: #fff; border-color: #6e6e73; }
+.task-status-btn.task-status-inprogress.active  { background: #0071e3; color: #fff; border-color: #0071e3; }
+.task-status-btn.task-status-onhold.active      { background: #ff9500; color: #fff; border-color: #ff9500; }
+.task-status-btn.task-status-completed.active   { background: #28a745; color: #fff; border-color: #28a745; }
+
+@media (max-width: 600px) {
+  .task-status-buttons { grid-template-columns: 1fr; }
+}

@@ -32,7 +32,14 @@ function clearMessage(id) {
 async function callAPI(action, data = {}) {
   const method = data.method || 'GET';
   let url = API_BASE + '?action=' + encodeURIComponent(action);
-  if (data.serial) url += '&serial=' + encodeURIComponent(data.serial);
+  // Any extra keys besides method/body are treated as GET query params
+  // (e.g. {serial: 'X'} or {project: 'Y'}) - generic so new GET-style
+  // actions (like getProjectTasks) don't need special-casing here.
+  Object.keys(data).forEach(key => {
+    if (key === 'method' || key === 'body') return;
+    if (data[key] === undefined || data[key] === null || data[key] === '') return;
+    url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(data[key]);
+  });
 
   const options = { method };
   if (method === 'POST') {
@@ -263,6 +270,7 @@ function populateAllDropdowns(data) {
   const customerOpts = toOptions(data.customers, 'code');
   populateSearchDropdown('dailyCustomerSearch', 'dailyCustomerList', customerOpts, 'dailyCustomer');
   populateSearchDropdown('serialCustomerSearch', 'serialCustomerList', customerOpts, 'serialCustomer');
+  populateSearchDropdown('tasksCustomerSearch', 'tasksCustomerList', customerOpts, 'tasksCustomer');
   // Ask Manager.io chat filter - reuses the same options, no "+" add button.
   populateSearchDropdown('chatCustomerSearch', 'chatCustomerList', customerOpts, 'chatCustomer');
 
@@ -271,6 +279,7 @@ function populateAllDropdowns(data) {
   window._allProjectOptions = projectOpts;
   populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
   populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
+  populateSearchDropdown('tasksProjectSearch', 'tasksProjectList', projectOpts, 'tasksProject');
   populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
   populateSearchDropdown('chatProjectSearch', 'chatProjectList', projectOpts, 'chatProject');
 
@@ -1263,6 +1272,183 @@ async function lookupSerial() {
 }
 
 // ======================================================
+// PROJECT TASKS — TECHNICIAN SCOPE CHECKLIST (Tasks tab)
+// ======================================================
+// Drill-down state: which System/Task/Subtask the technician has tapped
+// into, so the breadcrumb and "back" behaviour know where they are. Reset
+// every time a different project is loaded.
+let taskTreeData = null;
+let taskDrillPath = []; // e.g. ['System name', 'Task name'] while drilling down
+
+const TASK_STATUSES = ['Not Started', 'In Progress', 'On Hold', 'Completed'];
+const TASK_STATUS_CLASS = {
+  'Not Started': 'task-status-notstarted',
+  'In Progress': 'task-status-inprogress',
+  'On Hold': 'task-status-onhold',
+  'Completed': 'task-status-completed'
+};
+
+async function loadProjectTasks(project) {
+  const container = document.getElementById('taskTreeContainer');
+  const msgEl = document.getElementById('taskTreeMessage');
+  clearMessage('taskTreeMessage');
+  container.innerHTML = '<p style="color:#8e8e93;">Loading scope of work…</p>';
+  taskDrillPath = [];
+  try {
+    const result = await callAPI('getProjectTasks', { project });
+    if (!result.success) {
+      showMessage('taskTreeMessage', '❌ ' + result.error, 'error');
+      container.innerHTML = '';
+      return;
+    }
+    taskTreeData = result.systems || [];
+    if (taskTreeData.length === 0) {
+      container.innerHTML = '<p style="color:#8e8e93;">No scope of work has been set up for this project yet.</p>';
+      document.getElementById('taskBreadcrumb').style.display = 'none';
+      return;
+    }
+    renderTaskLevel();
+  } catch (err) {
+    showMessage('taskTreeMessage', '❌ ' + err.message, 'error');
+    container.innerHTML = '';
+  }
+}
+
+// Finds the node array at the current drill-down path: [] -> systems,
+// [system] -> that system's tasks, [system, task] -> that task's subtasks,
+// [system, task, subtask] -> that subtask's sub-subtasks.
+function getCurrentTaskLevel() {
+  let level = taskTreeData;
+  let node = null;
+  for (const name of taskDrillPath) {
+    node = level.find(n => n.name === name);
+    if (!node) return { items: [], node: null };
+    if (node.tasks) level = node.tasks;
+    else if (node.subtasks) level = node.subtasks;
+    else if (node.subSubtasks) level = node.subSubtasks;
+    else level = [];
+  }
+  return { items: level, node };
+}
+
+function renderTaskBreadcrumb() {
+  const el = document.getElementById('taskBreadcrumb');
+  if (taskDrillPath.length === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  const crumbs = ['<span class="crumb-link" data-depth="0">Systems</span>']
+    .concat(taskDrillPath.map((name, i) => `<span class="crumb-link" data-depth="${i + 1}">${name}</span>`));
+  el.innerHTML = crumbs.join('<span class="crumb-sep"> › </span>');
+  el.querySelectorAll('.crumb-link').forEach(elCrumb => {
+    elCrumb.addEventListener('click', function() {
+      const depth = parseInt(this.dataset.depth, 10);
+      taskDrillPath = taskDrillPath.slice(0, depth);
+      renderTaskLevel();
+    });
+  });
+}
+
+function statusPillHtml(status) {
+  return `<span class="task-status-pill ${TASK_STATUS_CLASS[status] || ''}">${status}</span>`;
+}
+
+function renderTaskLevel() {
+  renderTaskBreadcrumb();
+  const container = document.getElementById('taskTreeContainer');
+  const { items, node } = getCurrentTaskLevel();
+
+  // Leaf node (has its own leaf object with a taskKey) - show the status
+  // buttons + notes box instead of another list of cards.
+  if (node && node.leaf && node.leaf.taskKey) {
+    container.innerHTML = renderTaskLeafHtml(node);
+    wireTaskLeafEvents(node);
+    return;
+  }
+
+  if (items.length === 0) {
+    container.innerHTML = '<p style="color:#8e8e93;">Nothing here.</p>';
+    return;
+  }
+
+  container.innerHTML = items.map((item, idx) => {
+    const isLeaf = item.leaf && item.leaf.taskKey;
+    const sub = item.dueDate ? `Due ${item.dueDate}` : '';
+    return `
+      <div class="task-card ${item.complete ? 'task-card-complete' : ''}" data-idx="${idx}">
+        <div class="task-card-main">
+          <div class="task-card-name">${item.name}</div>
+          ${sub ? `<div class="task-card-sub">${sub}</div>` : ''}
+        </div>
+        ${statusPillHtml(item.status)}
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.task-card').forEach(card => {
+    card.addEventListener('click', function() {
+      const idx = parseInt(this.dataset.idx, 10);
+      taskDrillPath.push(items[idx].name);
+      renderTaskLevel();
+    });
+  });
+}
+
+function renderTaskLeafHtml(node) {
+  const leaf = node.leaf;
+  const statusButtons = TASK_STATUSES.map(s => `
+    <button type="button" class="task-status-btn ${TASK_STATUS_CLASS[s]} ${leaf.status === s ? 'active' : ''}" data-status="${s}">${s}</button>
+  `).join('');
+  return `
+    <div class="task-leaf">
+      <div class="task-leaf-name">${node.name}</div>
+      ${leaf.assignedTechnician ? `<div class="task-card-sub">Assigned: ${leaf.assignedTechnician}</div>` : ''}
+      ${leaf.dueDate ? `<div class="task-card-sub">Due: ${leaf.dueDate}</div>` : ''}
+      <div class="task-status-buttons">${statusButtons}</div>
+      <div class="form-group" style="margin-top:14px;">
+        <label>Notes / issues on this task</label>
+        <textarea id="taskLeafNotes" placeholder="Anything the project manager should know...">${leaf.notes || ''}</textarea>
+      </div>
+      <button type="button" class="btn" id="taskLeafSaveBtn">Save Notes</button>
+      <div id="taskLeafMessage" class="message"></div>
+    </div>
+  `;
+}
+
+function wireTaskLeafEvents(node) {
+  const leaf = node.leaf;
+  document.querySelectorAll('.task-status-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const status = this.dataset.status;
+      document.querySelectorAll('.task-status-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      await saveTaskLeafUpdate(leaf, { status });
+    });
+  });
+  document.getElementById('taskLeafSaveBtn').addEventListener('click', async function() {
+    const notes = document.getElementById('taskLeafNotes').value;
+    await saveTaskLeafUpdate(leaf, { notes });
+  });
+}
+
+async function saveTaskLeafUpdate(leaf, changes) {
+  showMessage('taskLeafMessage', '⏳ Saving...', 'info');
+  try {
+    const result = await callAPI('updateTaskStatus', {
+      method: 'POST',
+      body: { taskKey: leaf.taskKey, status: changes.status || leaf.status, notes: changes.notes !== undefined ? changes.notes : leaf.notes }
+    });
+    if (result.success) {
+      if (changes.status) leaf.status = changes.status;
+      if (changes.notes !== undefined) leaf.notes = changes.notes;
+      showMessage('taskLeafMessage', '✅ Saved', 'success');
+    } else {
+      showMessage('taskLeafMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (err) {
+    showMessage('taskLeafMessage', '❌ ' + err.message, 'error');
+  }
+}
+
+// ======================================================
 // ASK MANAGER.IO — AI DATA CHAT (Admin tab)
 // ======================================================
 // Filters are set via dropdowns BEFORE asking a question (smart pre-filter
@@ -1413,6 +1599,19 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('serialCustomerSearch').addEventListener('change', function() {
     const code = getSearchDropdownValue('serialCustomerSearch', 'serialCustomer');
     filterProjectDropdownByCustomerCode(code, 'serialProjectSearch', 'serialProjectList', 'serialProject');
+  });
+  document.getElementById('tasksCustomerSearch').addEventListener('change', function() {
+    const code = getSearchDropdownValue('tasksCustomerSearch', 'tasksCustomer');
+    filterProjectDropdownByCustomerCode(code, 'tasksProjectSearch', 'tasksProjectList', 'tasksProject');
+  });
+
+  // Project Tasks tab: once a project is picked (directly, or via the
+  // dropdown-list click - see populateSearchDropdown's item click handler,
+  // which also fires 'change' on the search input), load and render its
+  // scope-of-work tree.
+  document.getElementById('tasksProjectSearch').addEventListener('change', function() {
+    const project = getSearchDropdownValue('tasksProjectSearch', 'tasksProject');
+    if (project) loadProjectTasks(project);
   });
 
   // Petty Cash: picking a supplier auto-fills its VAT number (if on file)
