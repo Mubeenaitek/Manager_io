@@ -29,6 +29,18 @@ function clearMessage(id) {
 // ======================================================
 // API CALLS
 // ======================================================
+// NOTE (found during Serial-tab testing, not yet fixed): Google Apps
+// Script's web app exec URL occasionally causes a POST request to be
+// duplicated at the network/redirect layer - one copy lands correctly in
+// doPost() and writes the row, another lands in doGet() (which has no
+// matching case) and returns "Unknown action" back to the browser. The
+// dangerous part: the ORIGINAL write can still have succeeded even though
+// the user sees an error, so auto-retrying here is NOT safe - it can create
+// duplicate rows (reproduced this exact duplicate during testing). The
+// correct fix is a server-side idempotency key (Code.gs checks for an
+// already-used client-generated request ID before inserting), not a
+// client-side retry. Left as a known issue pending that fix rather than
+// papering over it with a retry that could make duplicates worse.
 async function callAPI(action, data = {}) {
   const method = data.method || 'GET';
   let url = API_BASE + '?action=' + encodeURIComponent(action);
@@ -236,7 +248,18 @@ function filterProjectDropdownByCustomerCode(code, searchInputId, listId, hidden
 // ======================================================
 // LOAD DROPDOWNS
 // ======================================================
-async function loadDropdowns() {
+// getDropdownData is by far the heaviest call the app makes (it reads
+// Customers, Projects - 1900+ rows, Crew, Suppliers, Cars and Inventory in
+// one go), and Google's Apps Script web app hosting is intermittently
+// flaky at delivering a response that large: the function itself always
+// completes successfully server-side (confirmed in the Apps Script
+// Executions log - no errors, 1-6s each), but every so often the client
+// gets back an HTML "couldn't open file" page from Drive instead of JSON,
+// which fails response.json() parsing. This is a delivery hiccup, not a
+// data or logic bug, and simply retrying succeeds. So: retry a few times
+// with a short backoff before surfacing an error to the user.
+async function loadDropdowns(attempt = 1) {
+  const MAX_ATTEMPTS = 4;
   try {
     const data = await callAPI('getDropdownData');
     if (data.success) {
@@ -247,7 +270,11 @@ async function loadDropdowns() {
       showMessage('dailyMessage', 'Error loading data: ' + data.error, 'error');
     }
   } catch (e) {
-    showMessage('dailyMessage', 'Network error: ' + e.message, 'error');
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      return loadDropdowns(attempt + 1);
+    }
+    showMessage('dailyMessage', 'Network error loading dropdowns after ' + MAX_ATTEMPTS + ' attempts: ' + e.message + ' — tap the refresh button to try again.', 'error');
   }
 }
 
@@ -279,6 +306,7 @@ function populateAllDropdowns(data) {
   window._allProjectOptions = projectOpts;
   populateSearchDropdown('dailyProjectSearch', 'dailyProjectList', projectOpts, 'dailyProject');
   populateSearchDropdown('serialProjectSearch', 'serialProjectList', projectOpts, 'serialProject');
+  populateSearchDropdown('serialGRProjectSearch', 'serialGRProjectList', projectOpts, 'serialGRProject');
   populateSearchDropdown('tasksProjectSearch', 'tasksProjectList', projectOpts, 'tasksProject');
   populateSearchDropdown('pettyProjectSearch', 'pettyProjectList', projectOpts, 'pettyProject');
   populateSearchDropdown('chatProjectSearch', 'chatProjectList', projectOpts, 'chatProject');
@@ -298,18 +326,20 @@ function populateAllDropdowns(data) {
     value: i.code || i.name,
     label: i.name + (i.code ? ' (' + i.code + ')' : '')
   }));
-  populateSearchDropdown('serialItemSearch', 'serialItemList', inventoryOpts, 'serialItem');
+  // serialItemSearch/serialItem removed - replaced by per-item-block dropdowns, see refreshSerialItemDropdowns()
 
   // --- Crew ---
   const crewOpts = data.crew.map(c => ({ value: c.name, label: c.name + (c.role ? ' - ' + c.role : '') }));
   populateSearchDropdown('petrolCrewSearch', 'petrolCrewList', crewOpts, 'petrolCrew');
   populateSearchDropdown('pettyPaidBySearch', 'pettyPaidByList', crewOpts, 'pettyPaidBy');
+  populateSearchDropdown('serialPersonSearch', 'serialPersonList', crewOpts, 'serialPerson');
 
   // --- Suppliers ---
   const supplierOpts = toOptions(data.suppliers || [], 'code');
   window._allSuppliers = data.suppliers || [];
   populateSearchDropdown('pettySupplierSearch', 'pettySupplierList', supplierOpts, 'pettySupplier');
   populateSearchDropdown('chatSupplierSearch', 'chatSupplierList', supplierOpts, 'chatSupplier');
+  populateSearchDropdown('serialSupplierSearch', 'serialSupplierList', supplierOpts, 'serialSupplier');
 
   // --- Cars ---
   const carOpts = (data.cars || []).map(c => ({
@@ -324,13 +354,14 @@ function populateAllDropdowns(data) {
   // Daily tab's "Who Worked?" and Serial tab's "Crew On Site" both need to
   // support selecting multiple staff, so both use the same checkbox pattern.
   populateCrewCheckboxes(data.crew, 'crewCheckboxes', 'crewSearch');
-  populateCrewCheckboxes(data.crew, 'serialCrewCheckboxes', 'serialCrewFilterSearch');
+  // serialCrewCheckboxes removed - Serial tab now uses a single Person dropdown (serialPerson), see above
 
   // --- Material rows (inventory) ---
   populateMaterialRows(data.inventory);
 
   // Also store inventory/customers for later use in dynamically added rows
   window._inventoryData = data.inventory;
+  refreshSerialItemDropdowns(data.inventory);
 
   // Bahrain fuel prices barely change for long stretches, so pre-fill
   // Cost/Litre with whatever was used last instead of leaving it blank.
@@ -1079,6 +1110,380 @@ async function submitSerialEntry(e) {
   }
 }
 
+// ======================================================
+// SERIAL TAB v2 - Goods Received / Delivery Note, multi-item, AI scanning
+// ======================================================
+
+/**
+ * Toggles the Supplier (Goods Received) vs Customer+Project (Delivery
+ * Note) sections and keeps native "required" validation in sync with
+ * whichever section is actually visible, so the browser doesn't block
+ * submission on a hidden field.
+ */
+function handleSerialTransactionTypeChange() {
+  const type = document.getElementById('serialTransactionType').value;
+  const isGoodsReceived = type === 'Goods Received';
+  const isDeliveryNote = type === 'Delivery Note';
+
+  document.getElementById('serialSupplierSection').style.display = isGoodsReceived ? 'grid' : 'none';
+  document.getElementById('serialCustomerSection').style.display = isDeliveryNote ? 'grid' : 'none';
+
+  document.getElementById('serialSupplierSearch').required = isGoodsReceived;
+  document.getElementById('serialCustomerSearch').required = isDeliveryNote;
+  document.getElementById('serialProjectSearch').required = isDeliveryNote;
+}
+
+/**
+ * Client-side barcode/QR decode straight off a photo, before falling back
+ * to the AI vision scan. Tries the browser's native BarcodeDetector first
+ * (fast, no network call); if that's unavailable or finds nothing, falls
+ * back to the ZXing library (covers iOS Safari, which has no
+ * BarcodeDetector). Returns null (not an error) if no barcode is found by
+ * either - a plain printed serial with no barcode is expected to fall
+ * through to the AI scan instead.
+ */
+function loadImageElement(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load image'));
+    img.src = url;
+  });
+}
+
+async function decodeBarcodeFromFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    if (window.BarcodeDetector) {
+      try {
+        const detector = new BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'codabar', 'itf', 'pdf417', 'data_matrix', 'aztec']
+        });
+        const img = await loadImageElement(url);
+        const barcodes = await detector.detect(img);
+        if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) return barcodes[0].rawValue;
+      } catch (err) {
+        // Native detector present but failed (unsupported format on this
+        // device, etc.) - fall through to the ZXing fallback below.
+      }
+    }
+    if (window.ZXing) {
+      try {
+        const reader = new ZXing.BrowserMultiFormatReader();
+        const result = await reader.decodeFromImageUrl(url);
+        if (result && typeof result.getText === 'function') return result.getText();
+      } catch (err) {
+        // No barcode found by ZXing either - not an error, just means the
+        // photo doesn't contain a decodable barcode/QR (e.g. a plain
+        // printed serial number).
+      }
+    }
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Matches a scanned/typed Part Number to an inventory item. The Inventory
+ * sheet has no dedicated "part number" column, so this matches against
+ * ItemCode first (in practice often the same as the manufacturer part/
+ * model number), then falls back to a substring match against the item
+ * name. Returns null (leaving the Item dropdown blank but still
+ * manually-searchable, per spec) when nothing matches.
+ */
+function matchInventoryItemByPartNumber(partNumber) {
+  const inventory = window._inventoryData || [];
+  const target = String(partNumber || '').trim().toLowerCase();
+  if (!target) return null;
+  return inventory.find(i => String(i.code || '').trim().toLowerCase() === target)
+    || inventory.find(i => String(i.name || '').toLowerCase().includes(target))
+    || null;
+}
+
+// --- Repeatable item blocks ---
+
+function initSerialItemDropdown(blockEl, inventory) {
+  const searchInput = blockEl.querySelector('.serial-item-search');
+  const listDiv = blockEl.querySelector('.serial-item-list');
+  const hiddenSelect = blockEl.querySelector('.serial-item-hidden');
+  if (!searchInput || !listDiv) return;
+
+  const opts = inventory.map(item => ({
+    value: item.code || item.name,
+    label: item.name + (item.code ? ' (' + item.code + ')' : '')
+  }));
+  searchInput.dataset.options = JSON.stringify(opts);
+
+  // Options are refreshed above every call (e.g. after a dropdown reload),
+  // but listeners should only ever be attached once per block.
+  if (searchInput.dataset.bound) return;
+  searchInput.dataset.bound = 'true';
+
+  searchInput.addEventListener('focus', function() {
+    const optsParsed = JSON.parse(this.dataset.options || '[]');
+    renderDropdownList(listDiv.id, optsParsed);
+    listDiv.classList.add('show');
+  });
+  searchInput.addEventListener('blur', function() {
+    setTimeout(() => { listDiv.classList.remove('show'); }, 200);
+  });
+  searchInput.addEventListener('input', function() {
+    const query = this.value.toLowerCase().trim();
+    const optsParsed = JSON.parse(this.dataset.options || '[]');
+    const filtered = optsParsed.filter(opt => opt.label.toLowerCase().includes(query));
+    renderDropdownList(listDiv.id, filtered);
+    listDiv.classList.toggle('show', filtered.length > 0);
+    if (hiddenSelect) hiddenSelect.value = '';
+  });
+  listDiv.addEventListener('click', function(e) {
+    const item = e.target.closest('.dropdown-item');
+    if (!item) return;
+    const value = item.dataset.value;
+    const label = item.textContent.trim();
+    searchInput.value = label;
+    if (hiddenSelect) hiddenSelect.value = value;
+    listDiv.classList.remove('show');
+  });
+}
+
+function refreshSerialItemDropdowns(inventory) {
+  document.querySelectorAll('#serialItemsContainer .serial-item-block').forEach(block => initSerialItemDropdown(block, inventory));
+}
+
+function renumberSerialItemBlocks() {
+  document.querySelectorAll('#serialItemsContainer .serial-item-block .serial-item-title span').forEach((span, idx) => {
+    span.textContent = 'Item ' + (idx + 1);
+  });
+}
+
+let serialItemBlockCounter = 0;
+
+function addSerialItemBlock() {
+  const container = document.getElementById('serialItemsContainer');
+  if (!container) return;
+  serialItemBlockCounter++;
+  const uid = 'si_' + Date.now() + '_' + serialItemBlockCounter;
+
+  const div = document.createElement('div');
+  div.className = 'serial-item-block';
+  div.innerHTML = `
+    <div class="serial-item-title">
+      <span>Item</span>
+      <button type="button" class="remove-btn" onclick="removeSerialItemBlock(this)">×</button>
+    </div>
+    <div class="serial-field-row">
+      <input type="text" class="serial-item-serial" placeholder="Serial number - type or scan">
+      <button type="button" class="scan-btn" title="Scan barcode/QR/label with camera or gallery" onclick="this.nextElementSibling.click()">📷</button>
+      <input type="file" class="serial-item-scan-input" accept="image/*" capture="environment" style="display:none;">
+    </div>
+    <div class="scan-status"></div>
+    <div class="serial-field-row">
+      <input type="text" class="serial-item-partnumber" placeholder="Part Number">
+      <input type="text" class="serial-item-brand" placeholder="Brand">
+    </div>
+    <div style="position:relative;">
+      <input type="text" class="serial-item-search search-input" placeholder="Search inventory item (optional)..." style="width:100%;">
+      <select class="serial-item-hidden" style="display:none;"></select>
+      <div class="serial-item-list dropdown-list" id="silist_${uid}"></div>
+    </div>
+  `;
+  container.appendChild(div);
+
+  div.querySelector('.serial-item-scan-input').addEventListener('change', function() {
+    handleSerialItemScan(this, div);
+  });
+
+  initSerialItemDropdown(div, window._inventoryData || []);
+  renumberSerialItemBlocks();
+}
+
+function removeSerialItemBlock(btn) {
+  const container = document.getElementById('serialItemsContainer');
+  const block = btn.closest('.serial-item-block');
+  if (container && block && container.children.length > 1) {
+    block.remove();
+    renumberSerialItemBlocks();
+  }
+}
+
+/**
+ * Per-item scan: barcode/QR decode first (fills Serial immediately if
+ * found), then always also runs the AI vision scan (Part Number and Brand
+ * can only come from reading the label's text, and AI is the fallback for
+ * Serial when no barcode was found). Never displays the photo itself -
+ * only the extracted text - per spec. Also attempts to auto-match the
+ * scanned Part Number against inventory once done.
+ */
+async function handleSerialItemScan(fileInput, blockEl) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+
+  const statusEl = blockEl.querySelector('.scan-status');
+  const serialInput = blockEl.querySelector('.serial-item-serial');
+  const partInput = blockEl.querySelector('.serial-item-partnumber');
+  const brandInput = blockEl.querySelector('.serial-item-brand');
+  const itemSearch = blockEl.querySelector('.serial-item-search');
+  const itemHidden = blockEl.querySelector('.serial-item-hidden');
+
+  const setStatus = (text, cls) => { if (statusEl) { statusEl.textContent = text; statusEl.className = 'scan-status ' + cls; } };
+  setStatus('🔎 Scanning...', 'scanning');
+
+  let barcodeValue = null;
+  try { barcodeValue = await decodeBarcodeFromFile(file); } catch (err) { barcodeValue = null; }
+  if (barcodeValue && serialInput) serialInput.value = barcodeValue;
+
+  try {
+    const base64 = await fileToBase64(file);
+    const result = await callAPI('scanSerialImage', { method: 'POST', body: { image: base64 } });
+    if (result.success) {
+      if (!barcodeValue && result.serialNumber && serialInput) serialInput.value = result.serialNumber;
+      if (result.partNumber && partInput) partInput.value = result.partNumber;
+      if (result.brand && brandInput) brandInput.value = result.brand;
+
+      if (serialInput && serialInput.value) {
+        setStatus('✅ Scanned: ' + serialInput.value, 'scan-success');
+      } else {
+        setStatus('⚠️ Could not read a serial number - please type it in', 'scan-error');
+      }
+
+      if (result.partNumber && itemSearch && itemHidden) {
+        const match = matchInventoryItemByPartNumber(result.partNumber);
+        if (match) {
+          itemSearch.value = match.name + (match.code ? ' (' + match.code + ')' : '');
+          itemHidden.value = match.code || match.name;
+        }
+        // No match: leave the Item dropdown blank but still manually
+        // searchable, per spec.
+      }
+    } else if (barcodeValue) {
+      setStatus('✅ Barcode: ' + barcodeValue + ' (AI read failed: ' + result.error + ')', 'scan-success');
+    } else {
+      setStatus('⚠️ AI scan failed: ' + result.error, 'scan-error');
+    }
+  } catch (err) {
+    if (barcodeValue) {
+      setStatus('✅ Barcode: ' + barcodeValue + ' (AI read unavailable: ' + err.message + ')', 'scan-success');
+    } else {
+      setStatus('⚠️ Scan failed: ' + err.message, 'scan-error');
+    }
+  }
+
+  fileInput.value = '';
+}
+
+function getSerialItemsData() {
+  const blocks = document.querySelectorAll('#serialItemsContainer .serial-item-block');
+  const items = [];
+  blocks.forEach(block => {
+    const serialNumber = block.querySelector('.serial-item-serial').value.trim();
+    const partNumber = block.querySelector('.serial-item-partnumber').value.trim();
+    const brand = block.querySelector('.serial-item-brand').value.trim();
+    const itemHidden = block.querySelector('.serial-item-hidden');
+    const itemSearch = block.querySelector('.serial-item-search');
+    const item = (itemHidden && itemHidden.value) ? itemHidden.value : (itemSearch ? itemSearch.value.trim() : '');
+    if (serialNumber) items.push({ serialNumber, partNumber, brand, item });
+  });
+  return items;
+}
+
+async function submitSerialForm(e) {
+  e.preventDefault();
+  clearMessage('serialMessage');
+
+  const transactionType = document.getElementById('serialTransactionType').value;
+  const isGoodsReceived = transactionType === 'Goods Received';
+  const items = getSerialItemsData();
+
+  const data = {
+    action: 'submitSerialBatch',
+    transactionType: transactionType,
+    date: document.getElementById('serialDate').value,
+    items: items,
+    responsiblePerson: getSearchDropdownValue('serialPersonSearch', 'serialPerson'),
+    notes: document.getElementById('serialNotes').value
+  };
+
+  if (isGoodsReceived) {
+    data.supplier = getSearchDropdownValue('serialSupplierSearch', 'serialSupplier');
+    data.project = getSearchDropdownValue('serialGRProjectSearch', 'serialGRProject'); // optional
+  } else {
+    data.customer = getSearchDropdownValue('serialCustomerSearch', 'serialCustomer');
+    data.project = getSearchDropdownValue('serialProjectSearch', 'serialProject');
+  }
+
+  if (!transactionType) { showMessage('serialMessage', 'Please select a transaction type', 'error'); return; }
+  if (isGoodsReceived && !data.supplier) { showMessage('serialMessage', 'Please select a supplier', 'error'); return; }
+  if (!isGoodsReceived && (!data.customer || !data.project)) { showMessage('serialMessage', 'Please select a customer and project', 'error'); return; }
+  if (!data.date) { showMessage('serialMessage', 'Please select a date', 'error'); return; }
+  if (items.length === 0) { showMessage('serialMessage', 'Add at least one item with a serial number', 'error'); return; }
+  if (!data.responsiblePerson) { showMessage('serialMessage', 'Please select the responsible person', 'error'); return; }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  try {
+    const result = await callAPI('submitSerialBatch', { method: 'POST', body: data });
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+    if (result.success) {
+      showMessage('serialMessage', '✅ ' + result.message, 'success');
+      // Fully reset the form for the next entry.
+      document.getElementById('serialTransactionType').value = '';
+      handleSerialTransactionTypeChange();
+      resetSearchDropdown('serialSupplierSearch', 'serialSupplier');
+      resetSearchDropdown('serialGRProjectSearch', 'serialGRProject');
+      resetSearchDropdown('serialCustomerSearch', 'serialCustomer');
+      resetSearchDropdown('serialProjectSearch', 'serialProject');
+      filterProjectDropdownByCustomerCode('', 'serialProjectSearch', 'serialProjectList', 'serialProject');
+      resetSearchDropdown('serialPersonSearch', 'serialPerson');
+      document.getElementById('serialNotes').value = '';
+      document.getElementById('serialDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('serialItemsContainer').innerHTML = '';
+      addSerialItemBlock();
+    } else {
+      showMessage('serialMessage', '❌ ' + result.error, 'error');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+    showMessage('serialMessage', '❌ Error: ' + error.message, 'error');
+  }
+}
+
+// --- Lookup Serial: manual typing, or camera/gallery scan ---
+
+async function handleLookupScan(fileInput) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('lookupScanStatus');
+  const lookupInput = document.getElementById('lookupSerial');
+  const setStatus = (text, cls) => { statusEl.textContent = text; statusEl.className = 'message ' + cls; statusEl.style.display = 'block'; };
+  setStatus('🔎 Scanning...', 'info');
+
+  let barcodeValue = null;
+  try { barcodeValue = await decodeBarcodeFromFile(file); } catch (err) { barcodeValue = null; }
+  if (barcodeValue) lookupInput.value = barcodeValue;
+
+  try {
+    const base64 = await fileToBase64(file);
+    const result = await callAPI('scanSerialImage', { method: 'POST', body: { image: base64 } });
+    if (result.success && !barcodeValue && result.serialNumber) lookupInput.value = result.serialNumber;
+    if (lookupInput.value) {
+      setStatus('✅ Detected: ' + lookupInput.value + ' — tap Search', 'success');
+    } else {
+      setStatus('⚠️ ' + (result.error || 'Could not read a serial number from that photo - please type it in'), 'error');
+    }
+  } catch (err) {
+    if (barcodeValue) {
+      setStatus('✅ Detected: ' + barcodeValue + ' — tap Search', 'success');
+    } else {
+      setStatus('⚠️ ' + err.message, 'error');
+    }
+  }
+  fileInput.value = '';
+}
+
 async function submitPetrol(e) {
   e.preventDefault();
   clearMessage('petrolMessage');
@@ -1251,14 +1656,21 @@ async function lookupSerial() {
         resultEl.innerHTML = result.records.map(r => `
           <div style="border-bottom:1px solid #e0e0e0; padding:8px 0;">
             <strong>${r['Column 1']}</strong> — ${r['Column 2']}<br>
-            Customer: ${r['Column 3']} | Project: ${r['Column 4']}<br>
-            Date: ${r['Column 5']} | Crew: ${r['Column 6']}<br>
+            Type: ${r['Column 12'] || '—'} | Customer: ${r['Column 3'] || '—'} | Supplier: ${r['Column 13'] || '—'}<br>
+            Project: ${r['Column 4'] || '—'} | Part #: ${r['Column 14'] || '—'} | Brand: ${r['Column 15'] || '—'}<br>
+            Date: ${r['Column 5']} | Person: ${r['Column 16'] || r['Column 6'] || '—'}<br>
             Notes: ${r['Column 7'] || '—'}
           </div>
         `).join('');
         resultEl.className = 'message success';
       }
       resultEl.style.display = 'block';
+      // Whether or not records were found, let the user ask a follow-up
+      // question about this serial - a "no records" answer is still a
+      // useful (and honest) response from askAboutSerial().
+      window._lastLookedUpSerial = serial;
+      document.getElementById('serialAskAIBlock').style.display = 'block';
+      document.getElementById('serialAskAIAnswer').style.display = 'none';
     } else {
       resultEl.textContent = '❌ ' + result.error;
       resultEl.className = 'message error';
@@ -1271,6 +1683,41 @@ async function lookupSerial() {
   }
 }
 
+async function askAboutSerial() {
+  const serial = window._lastLookedUpSerial || document.getElementById('lookupSerial').value.trim();
+  const question = document.getElementById('serialAskAIQuestion').value.trim();
+  const answerEl = document.getElementById('serialAskAIAnswer');
+  if (!serial) {
+    answerEl.textContent = 'Look up a serial number first';
+    answerEl.className = 'message error';
+    answerEl.style.display = 'block';
+    return;
+  }
+  if (!question) {
+    answerEl.textContent = 'Type a question first';
+    answerEl.className = 'message error';
+    answerEl.style.display = 'block';
+    return;
+  }
+  answerEl.textContent = '🤔 Thinking...';
+  answerEl.className = 'message info';
+  answerEl.style.display = 'block';
+  try {
+    const result = await callAPI('askAboutSerial', { method: 'POST', body: { serial, question } });
+    if (result.success) {
+      answerEl.textContent = result.answer;
+      answerEl.className = 'message success';
+    } else {
+      answerEl.textContent = '❌ ' + result.error;
+      answerEl.className = 'message error';
+    }
+  } catch (error) {
+    answerEl.textContent = '❌ ' + error.message;
+    answerEl.className = 'message error';
+  }
+  answerEl.style.display = 'block';
+}
+
 // ======================================================
 // PROJECT TASKS — TECHNICIAN SCOPE CHECKLIST (Tasks tab)
 // ======================================================
@@ -1279,6 +1726,18 @@ async function lookupSerial() {
 // every time a different project is loaded.
 let taskTreeData = null;
 let taskDrillPath = []; // e.g. ['System name', 'Task name'] while drilling down
+
+// Guards against a real race: the searchable-dropdown input fires a native
+// browser 'change' event on blur (with whatever raw text was typed) a beat
+// BEFORE the dropdown-item click handler sets the real value and dispatches
+// its own synthetic 'change'. That means loadProjectTasks can be called
+// twice in quick succession - once with a bogus half-typed project name,
+// once with the real one - and since these are two independent async
+// fetches, the bogus call's response can arrive AFTER the real one and
+// silently overwrite good data with "no scope of work found". This counter
+// makes loadProjectTasks ignore any response that isn't from the most
+// recent call.
+let taskLoadRequestId = 0;
 
 const TASK_STATUSES = ['Not Started', 'In Progress', 'On Hold', 'Completed'];
 const TASK_STATUS_CLASS = {
@@ -1294,8 +1753,12 @@ async function loadProjectTasks(project) {
   clearMessage('taskTreeMessage');
   container.innerHTML = '<p style="color:#8e8e93;">Loading scope of work…</p>';
   taskDrillPath = [];
+  const requestId = ++taskLoadRequestId;
   try {
     const result = await callAPI('getProjectTasks', { project });
+    // A newer call has since started (see taskLoadRequestId comment above) -
+    // this response is stale, drop it so it can't clobber the current view.
+    if (requestId !== taskLoadRequestId) return;
     if (!result.success) {
       showMessage('taskTreeMessage', '❌ ' + result.error, 'error');
       container.innerHTML = '';
@@ -1309,6 +1772,7 @@ async function loadProjectTasks(project) {
     }
     renderTaskLevel();
   } catch (err) {
+    if (requestId !== taskLoadRequestId) return;
     showMessage('taskTreeMessage', '❌ ' + err.message, 'error');
     container.innerHTML = '';
   }
@@ -1563,7 +2027,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Form events
   document.getElementById('dailyForm').addEventListener('submit', submitDailyReport);
-  document.getElementById('serialForm').addEventListener('submit', submitSerialEntry);
+  document.getElementById('serialForm').addEventListener('submit', submitSerialForm);
   document.getElementById('petrolForm').addEventListener('submit', submitPetrol);
   document.getElementById('pettyForm').addEventListener('submit', submitPettyCash);
   document.getElementById('addForm').addEventListener('submit', handleAddFormSubmit);
@@ -1572,14 +2036,24 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('dailyPhotoInput').addEventListener('change', function() {
     handlePhotoUpload(this, 'dailyPhotos', 'dailyPhotoPreview');
   });
-  document.getElementById('serialPhotoInput').addEventListener('change', function() {
-    handlePhotoUpload(this, 'serialPhoto', 'serialPhotoPreview');
-  });
   document.getElementById('petrolReceiptInput').addEventListener('change', function() {
     handlePhotoUpload(this, 'petrolReceipt', 'petrolReceiptPreview', 'petrol', 'petrolExtractStatus');
   });
   document.getElementById('pettyReceiptInput').addEventListener('change', function() {
     handlePhotoUpload(this, 'pettyReceipt', 'pettyReceiptPreview', 'pettyCash', 'pettyExtractStatus');
+  });
+
+  // Serial tab: transaction type toggle (Goods Received <-> Delivery Note)
+  document.getElementById('serialTransactionType').addEventListener('change', handleSerialTransactionTypeChange);
+  handleSerialTransactionTypeChange(); // sync required-ness on initial load
+
+  // Serial tab: seed one empty item block so there's always at least one
+  // to fill in.
+  addSerialItemBlock();
+
+  // Serial tab: Lookup Serial camera/gallery scan button
+  document.getElementById('lookupScanInput').addEventListener('change', function() {
+    handleLookupScan(this);
   });
 
   // Auto-calc

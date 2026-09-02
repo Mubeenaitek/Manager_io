@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Manager.io Field Data</title>
   <link rel="stylesheet" href="style.css">
+  <!-- ZXing: client-side barcode/QR decoding fallback for browsers without
+       the native BarcodeDetector API (notably iOS Safari). Only used to
+       read a barcode/QR straight off a photo before falling back to the
+       AI vision scan - see decodeBarcodeFromFile() in script.js. -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js" defer></script>
 </head>
 <body>
   <header>
@@ -154,7 +159,40 @@
     <!-- ========================================================= -->
     <section id="tab-serial" class="tab-content">
       <form id="serialForm">
-        <div class="form-row">
+        <div class="form-group">
+          <label>Transaction Type <span class="required">*</span></label>
+          <select id="serialTransactionType" required>
+            <option value="">Select...</option>
+            <option value="Goods Received">Goods Received</option>
+            <option value="Delivery Note">Delivery Note</option>
+          </select>
+        </div>
+
+        <!-- Goods Received: Supplier only, no "+" add button, plus optional Project -->
+        <div id="serialSupplierSection" class="form-row" style="display:none;">
+          <div class="form-group">
+            <label>Supplier <span class="required">*</span></label>
+            <div style="position:relative;">
+              <input type="text" id="serialSupplierSearch" placeholder="Search supplier..." class="search-input">
+              <select id="serialSupplier" style="display:none;"></select>
+              <div id="serialSupplierList" class="dropdown-list"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Project <span class="hint">(optional)</span></label>
+            <div style="display:flex; gap:4px;">
+              <div style="flex:1; position:relative;">
+                <input type="text" id="serialGRProjectSearch" placeholder="Search project..." class="search-input">
+                <select id="serialGRProject" style="display:none;"></select>
+                <div id="serialGRProjectList" class="dropdown-list"></div>
+              </div>
+              <button type="button" class="btn-add-small" data-target-search="serialGRProjectSearch" data-target-hidden="serialGRProject" onclick="openAddModal('project', this)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delivery Note: Customer + Project (same cascading behavior as before) -->
+        <div id="serialCustomerSection" class="form-row" style="display:none;">
           <div class="form-group">
             <label>Customer <span class="required">*</span></label>
             <div style="display:flex; gap:4px;">
@@ -184,41 +222,21 @@
           <input type="date" id="serialDate" required>
         </div>
 
+        <!-- Repeatable item blocks: Serial (type or scan), Part Number, Brand, Item -->
         <div class="form-group">
-          <label>Item <span class="required">*</span></label>
-          <div style="display:flex; gap:4px;">
-            <div style="flex:1; position:relative;">
-              <input type="text" id="serialItemSearch" placeholder="Search inventory..." class="search-input">
-              <select id="serialItem" style="display:none;"></select>
-              <div id="serialItemList" class="dropdown-list"></div>
-            </div>
-            <button type="button" class="btn-add-small" data-target-search="serialItemSearch" data-target-hidden="serialItem" onclick="openAddModal('inventory', this)">+</button>
+          <label>Items <span class="required">*</span></label>
+          <div id="serialItemsContainer"></div>
+          <button type="button" class="add-material-btn" onclick="addSerialItemBlock()">+ Add Item</button>
+        </div>
+
+        <!-- Single responsible person (not multi-select) -->
+        <div class="form-group">
+          <label>Person <span class="required">*</span></label>
+          <div style="position:relative;">
+            <input type="text" id="serialPersonSearch" placeholder="Search person..." class="search-input">
+            <select id="serialPerson" style="display:none;"></select>
+            <div id="serialPersonList" class="dropdown-list"></div>
           </div>
-        </div>
-
-        <div class="form-group">
-          <label>Serial Number <span class="required">*</span></label>
-          <input type="text" id="serialNumber" placeholder="Enter serial" required>
-        </div>
-
-        <div class="form-group">
-          <label>Quantity</label>
-          <input type="number" id="serialQty" value="1" min="0" step="1">
-        </div>
-
-        <!-- Crew On Site (multiple staff, same searchable-checkbox pattern as Who Worked?) -->
-        <div class="form-group">
-          <label>Crew On Site</label>
-          <input type="text" id="serialCrewFilterSearch" placeholder="Search crew..." class="search-input">
-          <div class="crew-checkboxes" id="serialCrewCheckboxes"></div>
-          <button type="button" class="btn-add-small" data-target-type="checkbox" data-target-search="serialCrewCheckboxes" onclick="openAddModal('crew', this)">+ Add Crew Member</button>
-        </div>
-
-        <div class="form-group">
-          <label>Photo</label>
-          <input type="file" id="serialPhotoInput" accept="image/*">
-          <div id="serialPhotoPreview"></div>
-          <input type="hidden" id="serialPhoto" value="">
         </div>
 
         <div class="form-group">
@@ -226,16 +244,29 @@
           <textarea id="serialNotes" placeholder="Additional notes..."></textarea>
         </div>
 
-        <button type="submit" class="btn">Submit Serial Entry</button>
+        <button type="submit" class="btn">Submit</button>
         <div id="serialMessage" class="message"></div>
       </form>
       <hr>
       <h3>🔍 Lookup Serial</h3>
       <div style="display:flex; gap:8px; align-items:end;">
-        <input type="text" id="lookupSerial" placeholder="Enter serial number" style="flex:1;">
+        <input type="text" id="lookupSerial" placeholder="Enter serial number, or scan" style="flex:1;">
+        <button type="button" class="btn-add-small" onclick="document.getElementById('lookupScanInput').click()" title="Scan barcode/QR/label">📷</button>
+        <input type="file" id="lookupScanInput" accept="image/*" capture="environment" style="display:none;">
         <button class="btn btn-success" onclick="lookupSerial()">Search</button>
       </div>
+      <div id="lookupScanStatus" class="message"></div>
       <div id="lookupResult" class="message"></div>
+
+      <!-- Ask AI about this serial -->
+      <div id="serialAskAIBlock" style="display:none; margin-top:14px;">
+        <label>Ask AI about this serial</label>
+        <div style="display:flex; gap:8px; align-items:end;">
+          <input type="text" id="serialAskAIQuestion" placeholder="e.g. When was this delivered, and to which customer?" style="flex:1;">
+          <button type="button" class="btn" onclick="askAboutSerial()">Ask</button>
+        </div>
+        <div id="serialAskAIAnswer" class="message"></div>
+      </div>
     </section>
 
     <!-- ========================================================= -->
