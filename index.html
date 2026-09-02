@@ -23,6 +23,7 @@
   <nav class="tabs" id="tabNav">
     <button class="tab-btn active" data-tab="daily">📝 Daily</button>
     <button class="tab-btn" data-tab="serial">🔢 Serial</button>
+    <button class="tab-btn" data-tab="tasks">✅ Tasks</button>
     <button class="tab-btn" data-tab="petrol">⛽ Petrol</button>
     <button class="tab-btn" data-tab="petty">💰 Petty</button>
     <button class="tab-btn" data-tab="export">📤 Export</button>
@@ -240,6 +241,37 @@
     <!-- ========================================================= -->
     <!-- TAB 3: PETROL                                              -->
     <!-- ========================================================= -->
+    <!-- ========================================================= -->
+    <!-- TAB: PROJECT TASKS (Technician Scope Checklist)            -->
+    <!-- ========================================================= -->
+    <section id="tab-tasks" class="tab-content">
+      <h3>✅ My Scope of Work</h3>
+      <p>Pick the customer and project, then drill down: System → Task → Subtask. Mark progress and leave a note as you go — it saves straight to the sheet.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Customer <span class="required">*</span></label>
+          <div style="position:relative;">
+            <input type="text" id="tasksCustomerSearch" placeholder="Search customer..." class="search-input">
+            <select id="tasksCustomer" style="display:none;"></select>
+            <div id="tasksCustomerList" class="dropdown-list"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Project <span class="required">*</span></label>
+          <div style="position:relative;">
+            <input type="text" id="tasksProjectSearch" placeholder="Search project..." class="search-input">
+            <select id="tasksProject" style="display:none;"></select>
+            <div id="tasksProjectList" class="dropdown-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="taskBreadcrumb" class="task-breadcrumb" style="display:none;"></div>
+      <div id="taskTreeMessage" class="message"></div>
+      <div id="taskTreeContainer"></div>
+    </section>
+
     <section id="tab-petrol" class="tab-content">
       <form id="petrolForm">
         <div class="form-group">
@@ -578,6 +610,6 @@
   <!-- Cache-busting query param: bump this whenever script.js changes so
        browsers that cached an old copy pick up the new version immediately
        instead of silently running stale code. -->
-  <script src="script.js?v=7"></script>
+  <script src="script.js?v=8"></script>
 </body>
 </html>
