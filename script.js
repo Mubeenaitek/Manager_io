@@ -570,6 +570,59 @@ function fileToBase64(file) {
   });
 }
 
+/**
+ * Downscales and recompresses an image file before sending it to the AI
+ * scan endpoint - full-resolution phone photos (often 3-4000px, several MB)
+ * made scanSerialImage() slow for no benefit, since a label/barcode is
+ * legible at much lower resolution. Returns base64 (no data: prefix) JPEG,
+ * capped at maxDim on the long edge. Falls back to the original file's
+ * base64 if canvas processing fails for any reason (e.g. an unsupported
+ * image format), so a scan never simply breaks because of this.
+ */
+function compressImageForScan(file, maxDim = 1280, quality = 0.72) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const commaIdx = dataUrl.indexOf(',');
+        resolve(commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        fileToBase64(file).then(resolve);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      fileToBase64(file).then(resolve);
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Compresses then sends a photo to the AI scan endpoint. Always used
+ * instead of calling scanSerialImage directly with a raw fileToBase64()
+ * payload - full-size phone photos made every AI scan noticeably slow.
+ */
+async function scanImageWithAI(file) {
+  const base64 = await compressImageForScan(file);
+  return callAPI('scanSerialImage', { method: 'POST', body: { image: base64 } });
+}
+
 async function handlePhotoUpload(fileInput, hiddenFieldId, previewContainerId, extractType = null, statusElId = null) {
   const files = Array.from(fileInput.files || []);
   if (files.length === 0) return;
@@ -1201,6 +1254,15 @@ function matchInventoryItemByPartNumber(partNumber) {
     || null;
 }
 
+/**
+ * Same as matchInventoryItemByPartNumber, but tries the Model Number first
+ * when present (a scanned label's MODEL NO is often a cleaner match to the
+ * inventory ItemCode than its Part Number), falling back to Part Number.
+ */
+function matchInventoryItemByModelOrPart(modelNumber, partNumber) {
+  return matchInventoryItemByPartNumber(modelNumber) || matchInventoryItemByPartNumber(partNumber);
+}
+
 // --- Repeatable item blocks ---
 
 function initSerialItemDropdown(blockEl, inventory) {
@@ -1280,6 +1342,9 @@ function addSerialItemBlock() {
     <div class="scan-status"></div>
     <div class="serial-field-row">
       <input type="text" class="serial-item-partnumber" placeholder="Part Number">
+      <input type="text" class="serial-item-modelnumber" placeholder="Model Number">
+    </div>
+    <div class="serial-field-row">
       <input type="text" class="serial-item-brand" placeholder="Brand">
     </div>
     <div style="position:relative;">
@@ -1322,6 +1387,7 @@ async function handleSerialItemScan(fileInput, blockEl) {
   const statusEl = blockEl.querySelector('.scan-status');
   const serialInput = blockEl.querySelector('.serial-item-serial');
   const partInput = blockEl.querySelector('.serial-item-partnumber');
+  const modelInput = blockEl.querySelector('.serial-item-modelnumber');
   const brandInput = blockEl.querySelector('.serial-item-brand');
   const itemSearch = blockEl.querySelector('.serial-item-search');
   const itemHidden = blockEl.querySelector('.serial-item-hidden');
@@ -1329,16 +1395,24 @@ async function handleSerialItemScan(fileInput, blockEl) {
   const setStatus = (text, cls) => { if (statusEl) { statusEl.textContent = text; statusEl.className = 'scan-status ' + cls; } };
   setStatus('🔎 Scanning...', 'scanning');
 
-  let barcodeValue = null;
-  try { barcodeValue = await decodeBarcodeFromFile(file); } catch (err) { barcodeValue = null; }
+  // Barcode decode and the AI vision scan don't depend on each other, so
+  // run them in parallel instead of one after another - this was the main
+  // source of the scan feeling slow (each step could take a couple of
+  // seconds on its own).
+  const [barcodeOutcome, aiOutcome] = await Promise.allSettled([
+    decodeBarcodeFromFile(file),
+    scanImageWithAI(file)
+  ]);
+
+  const barcodeValue = barcodeOutcome.status === 'fulfilled' ? barcodeOutcome.value : null;
   if (barcodeValue && serialInput) serialInput.value = barcodeValue;
 
-  try {
-    const base64 = await fileToBase64(file);
-    const result = await callAPI('scanSerialImage', { method: 'POST', body: { image: base64 } });
+  if (aiOutcome.status === 'fulfilled') {
+    const result = aiOutcome.value;
     if (result.success) {
       if (!barcodeValue && result.serialNumber && serialInput) serialInput.value = result.serialNumber;
       if (result.partNumber && partInput) partInput.value = result.partNumber;
+      if (result.modelNumber && modelInput) modelInput.value = result.modelNumber;
       if (result.brand && brandInput) brandInput.value = result.brand;
 
       if (serialInput && serialInput.value) {
@@ -1347,8 +1421,8 @@ async function handleSerialItemScan(fileInput, blockEl) {
         setStatus('⚠️ Could not read a serial number - please type it in', 'scan-error');
       }
 
-      if (result.partNumber && itemSearch && itemHidden) {
-        const match = matchInventoryItemByPartNumber(result.partNumber);
+      if ((result.modelNumber || result.partNumber) && itemSearch && itemHidden) {
+        const match = matchInventoryItemByModelOrPart(result.modelNumber, result.partNumber);
         if (match) {
           itemSearch.value = match.name + (match.code ? ' (' + match.code + ')' : '');
           itemHidden.value = match.code || match.name;
@@ -1361,12 +1435,10 @@ async function handleSerialItemScan(fileInput, blockEl) {
     } else {
       setStatus('⚠️ AI scan failed: ' + result.error, 'scan-error');
     }
-  } catch (err) {
-    if (barcodeValue) {
-      setStatus('✅ Barcode: ' + barcodeValue + ' (AI read unavailable: ' + err.message + ')', 'scan-success');
-    } else {
-      setStatus('⚠️ Scan failed: ' + err.message, 'scan-error');
-    }
+  } else if (barcodeValue) {
+    setStatus('✅ Barcode: ' + barcodeValue + ' (AI read unavailable: ' + aiOutcome.reason.message + ')', 'scan-success');
+  } else {
+    setStatus('⚠️ Scan failed: ' + aiOutcome.reason.message, 'scan-error');
   }
 
   fileInput.value = '';
@@ -1378,11 +1450,13 @@ function getSerialItemsData() {
   blocks.forEach(block => {
     const serialNumber = block.querySelector('.serial-item-serial').value.trim();
     const partNumber = block.querySelector('.serial-item-partnumber').value.trim();
+    const modelNumberEl = block.querySelector('.serial-item-modelnumber');
+    const modelNumber = modelNumberEl ? modelNumberEl.value.trim() : '';
     const brand = block.querySelector('.serial-item-brand').value.trim();
     const itemHidden = block.querySelector('.serial-item-hidden');
     const itemSearch = block.querySelector('.serial-item-search');
     const item = (itemHidden && itemHidden.value) ? itemHidden.value : (itemSearch ? itemSearch.value.trim() : '');
-    if (serialNumber) items.push({ serialNumber, partNumber, brand, item });
+    if (serialNumber) items.push({ serialNumber, partNumber, modelNumber, brand, item });
   });
   return items;
 }
@@ -1461,25 +1535,26 @@ async function handleLookupScan(fileInput) {
   const setStatus = (text, cls) => { statusEl.textContent = text; statusEl.className = 'message ' + cls; statusEl.style.display = 'block'; };
   setStatus('🔎 Scanning...', 'info');
 
-  let barcodeValue = null;
-  try { barcodeValue = await decodeBarcodeFromFile(file); } catch (err) { barcodeValue = null; }
+  const [barcodeOutcome, aiOutcome] = await Promise.allSettled([
+    decodeBarcodeFromFile(file),
+    scanImageWithAI(file)
+  ]);
+
+  const barcodeValue = barcodeOutcome.status === 'fulfilled' ? barcodeOutcome.value : null;
   if (barcodeValue) lookupInput.value = barcodeValue;
 
-  try {
-    const base64 = await fileToBase64(file);
-    const result = await callAPI('scanSerialImage', { method: 'POST', body: { image: base64 } });
+  if (aiOutcome.status === 'fulfilled') {
+    const result = aiOutcome.value;
     if (result.success && !barcodeValue && result.serialNumber) lookupInput.value = result.serialNumber;
     if (lookupInput.value) {
       setStatus('✅ Detected: ' + lookupInput.value + ' — tap Search', 'success');
     } else {
       setStatus('⚠️ ' + (result.error || 'Could not read a serial number from that photo - please type it in'), 'error');
     }
-  } catch (err) {
-    if (barcodeValue) {
-      setStatus('✅ Detected: ' + barcodeValue + ' — tap Search', 'success');
-    } else {
-      setStatus('⚠️ ' + err.message, 'error');
-    }
+  } else if (barcodeValue) {
+    setStatus('✅ Detected: ' + barcodeValue + ' — tap Search', 'success');
+  } else {
+    setStatus('⚠️ ' + aiOutcome.reason.message, 'error');
   }
   fileInput.value = '';
 }
